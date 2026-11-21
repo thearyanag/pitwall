@@ -151,7 +151,7 @@ def main():
         run(str(node_root / "bin/node"), "--version")
         run(
             str(node_root / "bin/node"),
-            str(bundle / "board-runtime/node_modules/vercel/dist/index.js"),
+            str(bundle / "board-runtime/node_modules/.bin/vercel"),
             "--version",
             env={**env, "VERCEL_TELEMETRY_DISABLED": "1"},
         )

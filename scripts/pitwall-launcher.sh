@@ -25,7 +25,7 @@ case "${1:-}" in
     printf '\nWorker: Python 3.11+ and a signed-in Codex CLI; Rust is needed only for code-editing tasks.\n' ;;
   login)
     shift
-    exec "$SPROUT_NODE" board-runtime/node_modules/vercel/dist/index.js login "$@" ;;
+    exec "$SPROUT_NODE" board-runtime/node_modules/.bin/vercel login "$@" ;;
   worker)
     shift
     [ "$#" -eq 0 ] || { echo 'Usage: pitwall worker (set SPROUT_TEAM in config.env)' >&2; exit 2; }
