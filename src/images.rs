@@ -406,6 +406,7 @@ mod tests {
             demo: false,
             node: "node".into(),
             adapter: dir.join("board-runtime/adapter.mjs"),
+            data_dir: None,
         };
         let original = DynamicImage::ImageRgba8(RgbaImage::from_pixel(
             48,

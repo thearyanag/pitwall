@@ -68,11 +68,53 @@ executable is still `sprout`, and `SPROUT_*` settings, draft/retry keys,
 are intentionally preserved so existing drafts, tasks and shortcuts keep working.
 The original educational reader keeps its historical Sprout name.
 
+## Install with one command (macOS)
+
+Apple Silicon and Intel Macs on macOS 13 or newer:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/thearyanag/pitwall/master/install.sh | sh
+```
+
+The installer downloads a prebuilt app, bundled Node runtime, and pinned Board
+dependencies, then verifies the release checksum. **No Rust, Node, npm, or source
+build is needed to try the UI.** It installs for your user without sudo and does
+not edit shell startup files, sign you in, or start a worker.
+
+```sh
+~/.local/bin/pitwall --demo                  # Try it without an account
+~/.local/bin/pitwall login                   # Sign in to Vercel when ready
+~/.local/bin/pitwall --team your-team        # Open your Board
+```
+
+If `~/.local/bin` is already on PATH, use `pitwall` directly. Otherwise add it to
+your shell's PATH or keep using the full path above. The terminal must support
+true colour; Rex supports the screenshot previews and WALL mark.
+
+Settings live in `~/.local/share/pitwall/config.env`; drafts, images and run
+history live in `~/.local/share/pitwall/state/`. Set `SPROUT_TEAM` in that trusted
+shell config file to avoid passing `--team` each time. To run the worker, install
+Python 3.11+ and a signed-in Codex CLI, then run `pitwall worker` (or prefix it
+with `SPROUT_TEAM=your-team`). Answer-only tasks do not need Rust. Tasks that edit
+Pitwall's Rust source still require Rust 1.88+ and its dependencies cached with
+`cargo fetch --locked --manifest-path ~/.local/share/pitwall/current/Cargo.toml`.
+
+Run the installer again to update. It switches the `current` version atomically
+and retains settings, drafts, and old release directories, including local worker
+changes in them. Restart the UI and any workers afterward. Reinstalling the same
+release preserves that release's local source changes. `PITWALL_VERSION=v0.2.0`
+can pin a tag; `PITWALL_INSTALL_DIR` and `PITWALL_BIN_DIR` select absolute install
+paths. Put these variables on the `sh` side of the pipe when overriding them.
+
+Release archives use ad-hoc code signatures; this initial tarball distribution is
+not Developer ID notarized. Install scripts and release checksums are public in
+this repository and its [releases](https://github.com/thearyanag/pitwall/releases).
+
 ## Install from source
 
 The current desktop workflow targets macOS and Rex (or a compatible terminal).
 Use Rust 1.88+, Node 22.22.3+, and Python 3.11+. The worker also needs an
-installed, signed-in Codex CLI. The repository contains source, not prebuilt binaries.
+installed, signed-in Codex CLI. Prebuilt binaries are published as release assets; the Git checkout contains source.
 
 ```sh
 git clone https://github.com/thearyanag/pitwall.git
@@ -308,6 +350,9 @@ Codex without its screenshot. Each run records `images/manifest.json` and
 
 ## Source map
 
+- `install.sh`: checksum-verified, per-user binary installer.
+- `scripts/package-release.py`: macOS archive builder with bundled Node/runtime dependencies.
+- `scripts/pitwall-launcher.sh`: installed `pitwall` command, login and worker entry points.
 - `src/main.rs`: configuration, terminal setup and restoration.
 - `src/app.rs`: Board state, shared actions and the event loop.
 - `src/app_tests.rs`: input, scrolling, draft and rendering regressions.
@@ -356,3 +401,20 @@ worker so its dependencies are cached. Per-run build output defaults to
 `worker/cache/`; `SPROUT_WORK_DIR` can move that cache elsewhere.
 
 References: https://github.com/vercel/board and https://vercel.com/docs/board
+
+## Build release archives
+
+Maintainers can produce both Mac archives from a clean committed checkout:
+
+```sh
+rustup target add aarch64-apple-darwin x86_64-apple-darwin
+python3 scripts/package-release.py --work /absolute/path/to/release-work
+python3 scripts/test-installer.py
+```
+
+The builder uses the current Cargo version, records the source commit, verifies
+official Node download checksums, installs locked npm dependencies for each CPU,
+and produces `dist/pitwall-darwin-arm64.tar.gz`, `dist/pitwall-darwin-x64.tar.gz`,
+and `dist/SHA256SUMS`. Intel smoke checks on an Apple Silicon builder require
+Rosetta. Upload all three assets to the matching GitHub release tag. Generated
+packages, local configuration and runtime state are excluded from Git.

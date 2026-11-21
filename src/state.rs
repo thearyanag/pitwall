@@ -182,6 +182,7 @@ mod tests {
             demo: false,
             node: "node".into(),
             adapter: root.join("board-runtime/adapter.mjs"),
+            data_dir: None,
         };
         std::fs::create_dir_all(config.state_dir()).unwrap();
         let path = config.state_dir().join("status.json");

@@ -16,8 +16,13 @@ import tomllib
 import uuid
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+STATE = (
+    pathlib.Path(os.environ.get("SPROUT_STATE_DIR", ROOT / "worker"))
+    .expanduser()
+    .resolve()
+)
 WORK = (
-    pathlib.Path(os.environ.get("SPROUT_WORK_DIR", ROOT / "worker/cache"))
+    pathlib.Path(os.environ.get("SPROUT_WORK_DIR", STATE / "cache"))
     .expanduser()
     .resolve()
 )
@@ -66,8 +71,8 @@ if not TASK:
         "Run through Launch Codex Worker.command TASK_ID; Board must hold the claim."
     )
 run = (
-    ROOT
-    / "worker/runs"
+    STATE
+    / "runs"
     / (
         datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         + "-"
@@ -261,6 +266,7 @@ Use cargo fmt first if necessary. The wrapper independently reruns checks and pu
 """
     target = WORK / "worker-targets" / run.name
     target.mkdir(parents=True, exist_ok=True)
+    CARGO_HOME.mkdir(parents=True, exist_ok=True)
     env = {
         **os.environ,
         "CARGO_HOME": str(CARGO_HOME),

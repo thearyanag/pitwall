@@ -21,14 +21,20 @@ pub struct Config {
     pub demo: bool,
     pub node: String,
     pub adapter: PathBuf,
+    pub data_dir: Option<PathBuf>,
 }
 impl Config {
-    pub fn state_dir(&self) -> PathBuf {
+    pub fn root_dir(&self) -> PathBuf {
         self.adapter
             .parent()
             .and_then(|p| p.parent())
             .unwrap_or_else(|| std::path::Path::new("."))
-            .join("worker")
+            .into()
+    }
+    pub fn state_dir(&self) -> PathBuf {
+        self.data_dir
+            .clone()
+            .unwrap_or_else(|| self.root_dir().join("worker"))
     }
 }
 #[derive(Clone, Debug, Deserialize)]
@@ -182,6 +188,7 @@ fn fetch(
     let mut child = Command::new(&config.node)
         .arg(&config.adapter)
         .arg("-")
+        .env("SPROUT_STATE_DIR", config.state_dir())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())

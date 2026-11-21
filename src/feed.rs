@@ -55,6 +55,7 @@ impl Feed {
         let mut child = Command::new(&config.node)
             .arg(&config.adapter)
             .arg("-")
+            .env("SPROUT_STATE_DIR", config.state_dir())
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())

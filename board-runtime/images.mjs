@@ -12,12 +12,11 @@ import {
 import { resolve, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 export const MAX_BYTES = 20 * 1024 * 1024;
-export const IMAGE_ROOT = fileURLToPath(
-  new URL("../worker/images/", import.meta.url),
-);
-export const DOWNLOAD_ROOT = fileURLToPath(
-  new URL("../worker/downloads/", import.meta.url),
-);
+const stateRoot =
+  process.env.SPROUT_STATE_DIR ||
+  fileURLToPath(new URL("../worker/", import.meta.url));
+export const IMAGE_ROOT = resolve(stateRoot, "images");
+export const DOWNLOAD_ROOT = resolve(stateRoot, "downloads");
 const hash = (data) => createHash("sha256").update(data).digest("hex");
 export function imageType(bytes) {
   if (bytes.length > MAX_BYTES)

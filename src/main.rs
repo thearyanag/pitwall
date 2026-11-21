@@ -25,6 +25,7 @@ fn config() -> Result<Option<Config>, String> {
         team: env::var("SPROUT_TEAM").unwrap_or_default(),
         board: env::var("SPROUT_BOARD").unwrap_or_default(),
         demo: false,
+        data_dir: env::var_os("SPROUT_STATE_DIR").map(PathBuf::from),
         node: env::var("SPROUT_NODE").unwrap_or_else(|_| "node".into()),
         adapter: if beside.exists() {
             beside
@@ -36,6 +37,10 @@ fn config() -> Result<Option<Config>, String> {
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--demo" => config.demo = true,
+            "--version" | "-V" => {
+                println!("Pitwall {}", env!("CARGO_PKG_VERSION"));
+                return Ok(None);
+            }
             "--team" => config.team = args.next().ok_or("--team needs a slug or ID")?,
             "--board" => config.board = args.next().ok_or("--board needs a name")?,
             "--help" | "-h" => {
@@ -45,11 +50,17 @@ fn config() -> Result<Option<Config>, String> {
             _ => return Err(format!("Unknown argument {arg}; use --help")),
         }
     }
+    if config.data_dir.as_ref().is_some_and(|p| !p.is_absolute()) {
+        return Err("SPROUT_STATE_DIR must be an absolute path.".into());
+    }
     if config.team.is_empty() {
         if config.demo {
             config.team = "demo".into();
         } else {
-            return Err("Choose a Vercel team with --team SLUG or SPROUT_TEAM (the launcher also reads .pitwall.env).".into());
+            return Err(
+                "Choose a Vercel team with --team SLUG or SPROUT_TEAM in your Pitwall settings."
+                    .into(),
+            );
         }
     }
     Ok(Some(config))

@@ -10,6 +10,7 @@ fn app() -> App {
         demo: true,
         node: "node".into(),
         adapter: PathBuf::from("unused"),
+        data_dir: None,
     })
 }
 fn populated(tag: &str) -> (App, PathBuf) {
@@ -575,6 +576,7 @@ fn an_expired_claim_refreshes_once_without_periodic_polling() {
 #[test]
 fn logo_switches_theme_hides_under_overlays_and_falls_back_to_text() {
     let (mut app, dir) = populated("brand-logo");
+    app.config.data_dir = Some(dir.join("persistent-state"));
     let assets = dir.join("assets/brand");
     std::fs::create_dir_all(&assets).unwrap();
     image::RgbaImage::from_pixel(64, 64, image::Rgba([244, 244, 241, 255]))

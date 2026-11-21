@@ -29,3 +29,8 @@
 *.worker-new
 *.log
 .DS_Store
+
+/dist/
+/runtimes/
+/VERSION
+/BUILD-INFO.json

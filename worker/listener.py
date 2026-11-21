@@ -15,7 +15,9 @@ if not TEAM:
     raise SystemExit("Set SPROUT_TEAM to your Vercel team before starting the worker.")
 BOARD = os.environ.get("SPROUT_BOARD") or "General"
 WORKER = ROOT / "worker"
-STATUS = WORKER / "status.json"
+STATE = pathlib.Path(os.environ.get("SPROUT_STATE_DIR", WORKER)).expanduser().resolve()
+STATE.mkdir(parents=True, exist_ok=True)
+STATUS = STATE / "status.json"
 stop = False
 active = None
 
@@ -82,7 +84,7 @@ def await_child(state, task=None):
 
 signal.signal(signal.SIGINT, interrupt)
 signal.signal(signal.SIGTERM, interrupt)
-lock = (WORKER / "queue.lock").open("a+")
+lock = (STATE / "queue.lock").open("a+")
 try:
     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
 except BlockingIOError:

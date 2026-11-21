@@ -31,3 +31,21 @@ test("library image inspection retains Pitwall format and size limits", () => {
   );
   assert.throws(() => imageType(gif), /supported PNG or JPEG/);
 });
+
+test("installed image storage stays outside the release directory", async () => {
+  const { spawnSync } = await import("node:child_process");
+  const { resolve, join } = await import("node:path");
+  const { tmpdir } = await import("node:os");
+  const state = resolve(tmpdir(), "pitwall-state-" + process.pid);
+  const source = `import {IMAGE_ROOT,DOWNLOAD_ROOT} from ${JSON.stringify(new URL("./images.mjs", import.meta.url).href)};console.log(JSON.stringify([IMAGE_ROOT,DOWNLOAD_ROOT]));`;
+  const result = spawnSync(
+    process.execPath,
+    ["--input-type=module", "-e", source],
+    { encoding: "utf8", env: { ...process.env, SPROUT_STATE_DIR: state } },
+  );
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), [
+    join(state, "images"),
+    join(state, "downloads"),
+  ]);
+});

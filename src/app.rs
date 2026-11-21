@@ -779,13 +779,7 @@ impl App {
         } else {
             "pitwall-mark-on-dark.png"
         };
-        let path = self
-            .config
-            .state_dir()
-            .parent()
-            .unwrap()
-            .join("assets/brand")
-            .join(name);
+        let path = self.config.root_dir().join("assets/brand").join(name);
         self.logo = images::Preview::load(&path, String::new(), &self.image_picker).ok();
         self.logo_light = Some(self.light);
     }

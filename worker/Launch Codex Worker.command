@@ -7,7 +7,7 @@ if [ "$#" -ne 1 ]; then
   exit 2
 fi
 . ./runtime.sh
-: "${SPROUT_TEAM:?Set SPROUT_TEAM in .pitwall.env or your environment.}"
+pitwall_check_worker
 exec "$SPROUT_NODE" board-runtime/node_modules/@vercel/board/dist/cli.mjs \
   --scope "$SPROUT_TEAM" --name "${SPROUT_BOARD:-General}" --as codex-worker \
   tasks run "$1" --lease 5m \

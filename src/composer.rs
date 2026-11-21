@@ -329,7 +329,37 @@ mod tests {
             demo: false,
             node: "node".into(),
             adapter: PathBuf::from("unused"),
+            data_dir: None,
         }
+    }
+    #[test]
+    fn installed_draft_and_image_survive_a_release_directory_change() {
+        let dir = std::env::temp_dir().join(format!("pitwall-upgrade-{}", std::process::id()));
+        let mut cfg = config();
+        cfg.data_dir = Some(dir.join("state"));
+        cfg.adapter = dir.join("versions/one/board-runtime/adapter.mjs");
+        let mut draft = Composer::new("general".into(), &cfg);
+        draft.insert("Keep this across upgrades");
+        draft
+            .add_image(
+                image::DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(
+                    8,
+                    8,
+                    image::Rgba([255, 90, 31, 255]),
+                )),
+                &cfg,
+                &Picker::halfblocks(),
+            )
+            .unwrap();
+        cfg.adapter = dir.join("versions/two/board-runtime/adapter.mjs");
+        let loaded = Composer::load_for(&cfg, "general".into(), None, String::new()).unwrap();
+        assert_eq!(loaded.draft.key, draft.draft.key);
+        assert_eq!(loaded.draft.text, "Keep this across upgrades");
+        assert!(loaded.draft.images[0]
+            .path
+            .starts_with(dir.join("state/images")));
+        assert!(loaded.draft.images[0].path.exists());
+        std::fs::remove_dir_all(dir).unwrap();
     }
     #[test]
     fn textarea_selection_undo_and_restore_keep_the_persisted_text_in_sync() {
