@@ -23,6 +23,7 @@ class InstallerTests(unittest.TestCase):
         self.bin = self.base / "commands"
         fake = self.base / "fake-tools"
         fake.mkdir()
+        self.fake = fake
         (fake / "curl").write_text(
             """#!/bin/sh
 out=; url=
@@ -101,6 +102,14 @@ esac
         )
         self.assertEqual(r.returncode == 0, succeeds, r.stdout + r.stderr)
         return r
+
+    def test_unsupported_macos_is_rejected(self):
+        self.release("v0.2.0")
+        tool = self.fake / "sw_vers"
+        tool.write_text("#!/bin/sh\necho 13.4\n")
+        tool.chmod(0o755)
+        self.assertIn("macOS 13.5", self.install(False).stderr)
+        self.assertFalse(self.home.exists())
 
     def test_fresh_install_reinstall_and_upgrade_preserve_data(self):
         self.release("v0.2.0")

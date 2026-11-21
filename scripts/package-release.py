@@ -69,7 +69,7 @@ def main():
     expected = {
         line.split()[1]: line.split()[0] for line in sums.read_text().splitlines()
     }
-    env = {**os.environ, "MACOSX_DEPLOYMENT_TARGET": "13.0"}
+    env = {**os.environ, "MACOSX_DEPLOYMENT_TARGET": "13.5"}
     target_dir = Path(env.get("CARGO_TARGET_DIR", str(work / "target"))).resolve()
     env["CARGO_TARGET_DIR"] = str(target_dir)
     for arch in args.arch or list(TARGETS):
@@ -140,7 +140,7 @@ def main():
                     "commit": commit,
                     "target": target,
                     "node": NODE_VERSION,
-                    "macos_minimum": "13",
+                    "macos_minimum": "13.5",
                     "signing": "ad-hoc; not Developer ID notarized",
                 },
                 indent=2,

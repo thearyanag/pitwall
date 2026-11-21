@@ -70,7 +70,7 @@ The original educational reader keeps its historical Sprout name.
 
 ## Install with one command (macOS)
 
-Apple Silicon and Intel Macs on macOS 13 or newer:
+Apple Silicon and Intel Macs on macOS 13.5 or newer:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/thearyanag/pitwall/master/install.sh | sh

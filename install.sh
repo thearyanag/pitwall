@@ -5,8 +5,12 @@ umask 077
 repo=thearyanag/pitwall
 fail() { printf 'Pitwall: %s\n' "$*" >&2; exit 1; }
 [ "$(uname -s)" = Darwin ] || fail 'This release supports macOS only.'
-major=$(sw_vers -productVersion | cut -d. -f1)
-[ "$major" -ge 13 ] || fail 'macOS 13 or newer is required.'
+os_version=$(sw_vers -productVersion)
+major=$(printf '%s' "$os_version" | cut -d. -f1)
+minor=$(printf '%s' "$os_version" | cut -d. -f2)
+if [ "$major" -lt 13 ] || { [ "$major" -eq 13 ] && [ "${minor:-0}" -lt 5 ]; }; then
+  fail 'macOS 13.5 or newer is required.'
+fi
 case "$(uname -m)" in
   arm64|aarch64) arch=arm64 ;;
   x86_64) arch=x64
