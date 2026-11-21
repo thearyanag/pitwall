@@ -1,0 +1,101 @@
+{
+  "name": "Pitwall",
+  "concept": "01 \u2014 Wall",
+  "version": 1,
+  "palette": {
+    "carbon": "#0E0F12",
+    "white": "#F4F4F1",
+    "orange": "#FF5A1F",
+    "grey": "#8A8F98"
+  },
+  "assets": [
+    {
+      "file": "pitwall-mark-on-light.svg",
+      "kind": "mark",
+      "background": "transparent",
+      "intended_surface": "light",
+      "ink": "#0E0F12",
+      "accent": "#FF5A1F",
+      "viewBox": "0 0 64 64"
+    },
+    {
+      "file": "pitwall-lockup-on-light.svg",
+      "kind": "lockup",
+      "background": "transparent",
+      "intended_surface": "light",
+      "ink": "#0E0F12",
+      "accent": "#FF5A1F",
+      "viewBox": "0 0 244 64"
+    },
+    {
+      "file": "pitwall-mark-on-dark.svg",
+      "kind": "mark",
+      "background": "transparent",
+      "intended_surface": "dark",
+      "ink": "#F4F4F1",
+      "accent": "#FF5A1F",
+      "viewBox": "0 0 64 64"
+    },
+    {
+      "file": "pitwall-lockup-on-dark.svg",
+      "kind": "lockup",
+      "background": "transparent",
+      "intended_surface": "dark",
+      "ink": "#F4F4F1",
+      "accent": "#FF5A1F",
+      "viewBox": "0 0 244 64"
+    }
+  ],
+  "geometry": {
+    "grid": 64,
+    "stroke": 8,
+    "wall": {
+      "x": 4,
+      "y": 4,
+      "width": 8,
+      "height": 56
+    },
+    "telemetry": [
+      {
+        "x": 20,
+        "y": 8,
+        "width": 24,
+        "height": 8
+      },
+      {
+        "x": 20,
+        "y": 28,
+        "width": 40,
+        "height": 8
+      },
+      {
+        "x": 20,
+        "y": 48,
+        "width": 24,
+        "height": 8
+      }
+    ],
+    "corner_radius": 0
+  },
+  "wordmark": {
+    "text": "pitwall",
+    "font": "Inter Medium 500",
+    "format": "outlined SVG paths",
+    "source": "@fontsource/inter",
+    "license": "Inter-OFL.txt"
+  },
+  "usage": {
+    "minimum_mark_size": 16,
+    "external_clear_space": "At least one stroke width around the mark or lockup",
+    "small_sizes": "Rendered for inspection at 16, 24, 32 and 48 px; geometry aligns to whole pixels at 16, 32 and 48 px.",
+    "variant_names": "on-light = carbon ink; on-dark = warm-white ink; both backgrounds transparent",
+    "no_font_dependency": true
+  },
+  "png_companions": {
+    "purpose": "Transparent 256px marks for the existing PNG terminal image renderer",
+    "files": [
+      "pitwall-mark-on-light.png",
+      "pitwall-mark-on-dark.png"
+    ]
+  }
+}

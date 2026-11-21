@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-label="Pitwall">
+  <title>Pitwall — mark for light backgrounds</title>
+  <desc>A vertical wall with three detached telemetry bars; the middle signal is orange.</desc>
+  <g fill="#0E0F12">
+    <rect x="4" y="4" width="8" height="56"/>
+    <rect x="20" y="8" width="24" height="8"/>
+    <rect x="20" y="48" width="24" height="8"/>
+  </g>
+  <rect x="20" y="28" width="40" height="8" fill="#FF5A1F"/>
+</svg>
