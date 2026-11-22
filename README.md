@@ -7,7 +7,7 @@
 
 **All your agent work, one view.**
 
-Give Codex a task, follow its progress, and reply with changes—all from your
+Give your coding agent a task, follow its progress, and reply with changes—all from your
 terminal. Pitwall keeps the request, screenshots, progress updates, results,
 and feedback together in the same conversation.
 
@@ -16,15 +16,15 @@ right. See the work and take the next step from one screen.
 
 ## What Pitwall does today
 
-- **Send work:** create a task and let the local Codex worker pick it up.
+- **Send work:** create a task and let the local agent worker pick it up.
 - **Bring the context:** paste screenshots, preview them, and attach them to a task or reply.
 - **Follow progress:** see task state, worker availability, progress messages, and results as Board events arrive.
 - **Revise in place:** send feedback in the same conversation; the next run uses the original request and relevant prior discussion.
-- **Choose when Codex runs:** send a request to Codex or leave a comment without starting work.
+- **Choose when the agent runs:** send a request to your agent or leave a comment without starting work.
 - **Pick up where you left off:** separate drafts survive switching tasks and restarting the app.
 - **Check local changes:** code-editing runs use an isolated source copy and must pass independent checks before their changes are applied locally.
 
-The current integration is **Codex + Vercel Board**, with one connected Board per
+Pitwall supports **Codex, Claude Code, Grok Build, and Antigravity + Vercel Board**, with one connected Board per
 app instance and one local worker processing one task at a time. The worker's
 editing scope is this project's Rust source and README. Questions and writing
 requests can finish with an answer and no file changes.
@@ -35,7 +35,7 @@ task and conversation data. Pitwall runs inside Rex or a compatible terminal.
 ## Positioning and voice
 
 Pitwall is a **terminal workspace for agent work**, for developers who want to
-delegate to Codex while keeping the request, progress, and next action in view.
+delegate to their installed coding agents while keeping the request, progress, and next action in view.
 Its promise is continuity: a revision belongs with the work it changes.
 
 The name suggests a place to oversee work and decide when to intervene. Keep
@@ -46,18 +46,18 @@ Report what happened and what the user can do next.
 | Surface | Copy |
 | --- | --- |
 | Main headline | All your agent work, one view. |
-| Supporting line | Send tasks to Codex, follow progress, and give feedback in the same conversation. |
+| Supporting line | Send tasks to your agent, follow progress, and give feedback in the same conversation. |
 | Short description | A terminal workspace for tasks, agent progress, and feedback. |
 | Empty task list | No tasks yet. Create your first task. |
-| Task submitted | Task queued for Codex. |
-| Feedback submitted | Feedback queued for Codex. |
-| Comment submitted | Comment posted. Codex was not started. |
+| Task submitted | Task queued for the agent. |
+| Feedback submitted | Feedback queued for the agent. |
+| Comment submitted | Comment posted. Agent was not started. |
 | Answer-only completion | Response complete. No files changed. |
 | Verified code changes | Changes applied locally. Checks passed. |
 
 Use completion language that matches the result. A completed run is not
 necessarily a deployed release, and checks should only be mentioned when they
-actually ran. Multiple agent providers, parallel workers, a dedicated
+actually ran. Parallel workers, a dedicated
 attention/review queue, and an integrated diff viewer are future directions,
 not current product claims.
 
@@ -67,6 +67,20 @@ executable is still `sprout`, and `SPROUT_*` settings, draft/retry keys,
 `project=sprout`, `source=sprout-ui`, `sprout-runs`, and Rex's process-name match
 are intentionally preserved so existing drafts, tasks and shortcuts keep working.
 The original educational reader keeps its historical Sprout name.
+
+## Local agents
+
+Click **Agent: …** in a new task or reply, or press **Ctrl+G**, to choose the
+agent for that message. You can switch agents within the same conversation. Pitwall starts the agent process when
+the worker picks up the task; no separate ACP server command is needed.
+Use native agent logins. Missing installations are shown in the composer.
+Permission requests appear in a local dialog with the agent’s choices; Esc denies.
+
+See [agent setup and adapter architecture](docs/agents.md) for configuration,
+capability limits, session continuation, and adding another ACP agent.
+
+Multi-agent conversations and model selection are included in **v0.3.0**.
+Run the installer below to install or upgrade; restart existing UI and worker tabs afterward.
 
 ## Install with one command (macOS)
 
@@ -94,7 +108,7 @@ true colour; Rex supports the screenshot previews and WALL mark.
 Settings live in `~/.local/share/pitwall/config.env`; drafts, images and run
 history live in `~/.local/share/pitwall/state/`. Set `SPROUT_TEAM` in that trusted
 shell config file to avoid passing `--team` each time. To run the worker, install
-Python 3.11+ and a signed-in Codex CLI, then run `pitwall worker` (or prefix it
+Python 3.11+ and a signed-in supported agent CLI, then run `pitwall worker` (or prefix it
 with `SPROUT_TEAM=your-team`). Answer-only tasks do not need Rust. Tasks that edit
 Pitwall's Rust source still require Rust 1.88+ and its dependencies cached with
 `cargo fetch --locked --manifest-path ~/.local/share/pitwall/current/Cargo.toml`.
@@ -102,7 +116,7 @@ Pitwall's Rust source still require Rust 1.88+ and its dependencies cached with
 Run the installer again to update. It switches the `current` version atomically
 and retains settings, drafts, and old release directories, including local worker
 changes in them. Restart the UI and any workers afterward. Reinstalling the same
-release preserves that release's local source changes. `PITWALL_VERSION=v0.2.0`
+release preserves that release's local source changes. `PITWALL_VERSION=v0.3.0`
 can pin a tag; `PITWALL_INSTALL_DIR` and `PITWALL_BIN_DIR` select absolute install
 paths. Put these variables on the `sh` side of the pipe when overriding them.
 
@@ -114,7 +128,7 @@ this repository and its [releases](https://github.com/thearyanag/pitwall/release
 
 The current desktop workflow targets macOS and Rex (or a compatible terminal).
 Use Rust 1.88+, Node 22.22.3+, and Python 3.11+. The worker also needs an
-installed, signed-in Codex CLI. Prebuilt binaries are published as release assets; the Git checkout contains source.
+installed, signed-in supported agent CLI. Prebuilt binaries are published as release assets; the Git checkout contains source.
 
 ```sh
 git clone https://github.com/thearyanag/pitwall.git
@@ -132,7 +146,7 @@ cp .pitwall.env.example .pitwall.env
 Run `./'Launch Pitwall.command' --demo` for fictional sample data; it cannot
 submit tasks. `.pitwall.env` is an optional trusted shell configuration file,
 read by the launchers and excluded from Git. Set executable paths there when
-launching from Finder if Node/Python/Codex are not on its PATH. Environment
+launching from Finder if Node/Python/your agent are not on its PATH. Environment
 variables take precedence over the defaults in the supplied example.
 
 ## Run
@@ -164,16 +178,20 @@ are handled by the SDK, not copied into Pitwall. To refresh an expired login:
 ## Composer and clickable controls
 
 The conversation has an always-visible composer. Click it and type your reply.
-**Send to Codex** is the default; choose **Comment only** to post a note without
+**Run agent** is the default; click the mode button beside Paste to switch to
+**Comment only** and post a note without
 creating a worker run. Click **Send** or press **Cmd+Enter**. Enter adds a new line.
-After sending, the composer clears and returns to Send to Codex.
+After sending, the composer clears and retains the selected agent/model.
+Click **Model: …** or press **Ctrl+O** to load the installed agent’s model choices.
+Choose a different model for a reply to switch within the same conversation;
+queued messages retain the selection they were submitted with.
 
 **+ New task** uses the same composer to create a task in the selected channel.
 Selecting a task switches back to its reply draft. Drafts are saved separately
 per channel/conversation, including images and send mode, and survive restarts.
 Esc leaves the editor without deleting the draft. The editor supports selection,
 word wrapping and undo/redo (**Ctrl+Z**, **Ctrl+Shift+Z**); these use
-`ratatui-textarea`. Drafts keep their existing JSON format.
+`ratatui-textarea`. Existing drafts are migrated on read; older drafts default to Codex.
 
 Click **Paste** or press **Cmd+V** for clipboard text or screenshots. **Attach**
 opens a file chooser inside Pitwall: click folders/images, or type/paste a path
@@ -223,7 +241,7 @@ Inter font license. No runtime SVG or font dependency is added.
 | q / Ctrl-C | Quit and restore the terminal |
 
 Help pauses keyboard navigation and other controls beneath the panel; `q` and
-Ctrl-C still quit. Pitwall submits tasks; a separate queue worker runs Codex.
+Ctrl-C still quit. Pitwall submits tasks; a separate queue worker runs the selected agent.
 
 The UI subscribes to Board's event feed through one long-lived SDK process.
 Relevant events trigger snapshots, coalesced across bursts and deferred while a
@@ -281,12 +299,12 @@ Ctrl+C can quit even during submission; n on the next launch recovers it.
 
 ### Example: a queued task
 
-Keep the **Codex Queue** tab running. In Pitwall, select a live channel, press **n**,
+Keep the **Agent Queue** tab running. In Pitwall, select a live channel, press **n**,
 and type: “Improve README.md by adding a short explanation of how to refresh the
 task list. Change README.md only.” Press **Ctrl+S**, then watch the task become
 claimed and completed (press **r** to refresh the list). Inspect the selected
 task's conversation for progress, the summary and validation results. **Ctrl+C**
-in the Codex Queue tab stops the worker.
+in the queue worker tab stops the worker.
 
 Press **c** to open a reply on the selected task, then **Ctrl+S** to queue the worker follow-up in the same conversation.
 
@@ -294,13 +312,15 @@ Press **c** to open a reply on the selected task, then **Ctrl+S** to queue the w
 
 Select one of your Pitwall tasks. Write feedback, a question, or requested changes
 in the visible composer, then click **Send** or press **Cmd+Enter**. You can attach screenshots using the
-same image controls as the new-task composer. The reply and Codex's progress and
+same image controls as the new-task composer. The reply and the agent's progress and
 answer remain in the original conversation.
 
 The worker processes requests in order. Feedback sent while it is working is
 queued for another run after the current run; it does not interrupt the running
-model. Each follow-up reads the original request, prior discussion, relevant
-screenshots and current source, and addresses the new message. Questions can
+model. A verified native session is resumed when supported, with the new
+request and any shared history it missed. Switching agents preserves the Board
+conversation and reattaches reference images. Otherwise the run receives the original request, bounded
+Board history, and relevant images. Both paths use current source. Questions can
 finish with an answer and no file changes. Code changes still go through the
 independent checks before being published locally.
 
@@ -344,8 +364,8 @@ placements because those produced blank previews through Rex.
 Preview copies may be scaled; the Board attachment keeps full resolution.
 
 The queue worker downloads task images into its isolated run and passes each
-file to `codex exec --image`. Download failures stop the task instead of running
-Codex without its screenshot. Each run records `images/manifest.json` and
+file through the selected adapter’s image input. Unsupported image capabilities
+or download failures stop the task rather than silently dropping screenshots. Each run records `images/manifest.json` and
 `image-inputs.json` so the image handoff can be checked.
 
 ## Source map
@@ -361,6 +381,10 @@ Codex without its screenshot. Each run records `images/manifest.json` and
 - `rex-shortcuts.lua`: Pitwall-scoped Cmd+V and Cmd+Enter bindings.
 - `src/board.rs`: background worker, cancellation, timeouts and JSON bridge.
 - `src/composer.rs`: ratatui-textarea integration, screenshot drafts and persistent retry state.
+- `src/approvals.rs`: scoped local permission requests and replies.
+- `board-runtime/providers/`: common contract, instance registry, and native/ACP adapters.
+- `board-runtime/discover-models.mjs`: explicit native model discovery for the picker, without generation.
+- `board-runtime/agent-runner.mjs`: automatic agent lifecycle and normalized events.
 - `src/state.rs`: typed focus, list mode, task state and worker heartbeat.
 - `src/feed.rs`: long-lived feed process and typed notifications.
 - `board-runtime/feed.mjs`: official SDK subscription and view invalidations.
@@ -368,8 +392,9 @@ Codex without its screenshot. Each run records `images/manifest.json` and
 - `board-runtime/images.mjs`: image-size metadata inspection, limits, authenticated transfers and retry receipts.
 - `board-runtime/feedback.mjs`: follow-up jobs, original-thread routing and run context.
 - `board-runtime/queue.mjs`: scoped task admission and official Board wait API.
+- `worker/handoff.py`: bounded, attributed history and per-agent image/context coverage.
 - `worker/listener.py`: local process supervisor, heartbeat and shutdown.
-- `worker/run_codex.py`: isolated Codex run, verification and local publication.
+- `worker/run_codex.py`: provider-neutral source snapshots, verification and local publication (legacy filename).
 - `board-runtime/adapter.mjs`: shared SDK boundary for UI reads/writes, queue discovery and run preparation.
 - `board-runtime/adapter.test.mjs`: integration checks against Board's in-memory backend.
 - `src/bin/reader.rs`: the original educational document reader; run `./reader`.
@@ -388,6 +413,8 @@ cargo build --locked
 cargo test --locked
 cargo clippy --locked --all-targets -- -D warnings
 node --test board-runtime/*.test.mjs
+npm run typecheck --prefix board-runtime
+python3 -m unittest discover -s worker -p 'test_*.py'
 ```
 
 Use Node 22.22.3 or newer for the local-backend integration tests; older Node

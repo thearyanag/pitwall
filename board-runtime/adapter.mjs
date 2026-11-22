@@ -1,3 +1,5 @@
+import { MODEL_LABEL, modelLabel } from "./providers/models.mjs";
+import { catalog, provider, PROVIDER_LABEL } from "./providers/registry.mjs";
 import { waitForTask } from "./queue.mjs";
 import { follow } from "./feed.mjs";
 // The only network boundary. Uses Vercel's official SDK and existing CLI login.
@@ -16,8 +18,18 @@ import {
 
 export const clean = (value) =>
   String(value ?? "").replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, "");
-const author = (m) =>
-  clean(m.author?.name || m.author?.handle || m.by?.actor || "Unknown");
+const author = (m) => {
+  const agent = m.labels?.[PROVIDER_LABEL];
+  if (
+    agent &&
+    m.labels?.["pitwall.kind"] &&
+    m.by?.actor?.endsWith("+codex-worker")
+  )
+    return clean(
+      `${catalog().find((p) => p.id === agent)?.label || agent} · ${m.labels?.[MODEL_LABEL] && m.labels[MODEL_LABEL] !== "default" ? m.labels[MODEL_LABEL] : "worker"}`,
+    );
+  return clean(m.author?.name || m.author?.handle || m.by?.actor || "Unknown");
+};
 const taskState = (task) =>
   task?.state === "claimed" &&
   task.claim &&
@@ -92,6 +104,8 @@ export async function execute(team, req, imageRoot) {
       throw new Error("Write a task between 1 and 8,000 characters.");
     if (!req.channel || !req.key)
       throw new Error("Task channel and submission key are required.");
+    const agent = provider(req.provider);
+    const model = modelLabel(req.model);
     const attachments = await uploadImages(team, req, imageRoot);
     const me = await team.me();
     const { task } = await team.tasks.create(req.channel, {
@@ -99,7 +113,12 @@ export async function execute(team, req, imageRoot) {
       id: req.key,
       for: `${me.principal}+codex-worker`,
       noSync: true,
-      labels: { project: "sprout", source: "sprout-ui" },
+      labels: {
+        project: "sprout",
+        source: "sprout-ui",
+        [PROVIDER_LABEL]: agent.id,
+        [MODEL_LABEL]: model,
+      },
       attachments,
     });
     return {
@@ -114,7 +133,15 @@ export async function execute(team, req, imageRoot) {
       imageRoot,
     );
     const item = summary({
-      message: { ...result.page.message, task: result.effective.task },
+      message: {
+        ...result.page.message,
+        task: result.effective.task,
+        labels: {
+          ...result.page.message.labels,
+          [PROVIDER_LABEL]: result.effective.provider,
+          [MODEL_LABEL]: modelLabel(result.effective.model),
+        },
+      },
       replies: result.page.replies.filter((m) => !m.deleted).length,
     });
     return {
@@ -158,6 +185,7 @@ export async function execute(team, req, imageRoot) {
     } while (after);
     return {
       identity: clean(me.name || me.handle || me.actor),
+      providers: catalog(),
       channels: channels.sort((a, b) => a.path.localeCompare(b.path)),
     };
   }
@@ -178,7 +206,15 @@ export async function execute(team, req, imageRoot) {
             const effective = await effectiveTask(team, entry.message);
             return summary({
               ...entry,
-              message: { ...entry.message, task: effective.task },
+              message: {
+                ...entry.message,
+                task: effective.task,
+                labels: {
+                  ...entry.message.labels,
+                  [PROVIDER_LABEL]: effective.provider,
+                  [MODEL_LABEL]: modelLabel(effective.model),
+                },
+              },
             });
           }),
         )),
@@ -271,6 +307,7 @@ export async function demo(req) {
   if (req.op === "init")
     return {
       identity: "Demo data · not connected",
+      providers: catalog(),
       channels: channels.map((path) => ({ path })),
     };
   if (req.op === "list") return { items: all[req.channel] ?? [], next: null };

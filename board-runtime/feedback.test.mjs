@@ -25,6 +25,175 @@ async function original(team) {
 }
 const request = (id, key, text) => ({ op: "reply", thread: id, key, text });
 
+test("model selection is per run, retry-safe, and does not split the agent session key", async () =>
+  fixture(async (team) => {
+    const root = await execute(team, {
+      op: "create",
+      channel: "general",
+      text: "First",
+      key: "model-root",
+      provider: "codex",
+      model: "model-a",
+    });
+    const initial = await prepareRun(team, root.item.id);
+    assert.equal(initial.model, "model-a");
+    const req = {
+      ...request(root.item.id, "model-next", "Continue"),
+      provider: "codex",
+      model: "model-b",
+    };
+    const next = await execute(team, req);
+    const prepared = await prepareRun(team, next.run_id);
+    assert.equal(prepared.model, "model-b");
+    assert.equal(prepared.provider_key, initial.provider_key);
+    assert.equal((await execute(team, req)).run_id, next.run_id);
+    await assert.rejects(
+      execute(team, { ...req, model: "model-c" }),
+      /Cannot change a submitted reply/,
+    );
+    const reset = await execute(team, {
+      ...request(root.item.id, "model-default", "Default now"),
+      provider: "codex",
+      model: null,
+    });
+    assert.equal((await prepareRun(team, reset.run_id)).model, null);
+    assert.equal((await prepareRun(team, next.run_id)).model, "model-b");
+    const list = await execute(team, {
+      op: "list",
+      channel: "general",
+      mode: "tasks",
+    });
+    assert.ok(list.items[0].labels.includes("pitwall.model=default"));
+  }));
+
+test("Codex -> Antigravity -> Codex keeps one root and immutable per-run agent choices", async () =>
+  fixture(async (team) => {
+    const root = await execute(team, {
+      op: "create",
+      channel: "general",
+      key: "switch-root",
+      text: "Original",
+      provider: "codex",
+    });
+    const reviewReq = {
+      ...request(root.item.id, "switch-review", "Review with Antigravity"),
+      provider: "antigravity",
+    };
+    const review = await execute(team, reviewReq);
+    const back = await execute(team, {
+      ...request(root.item.id, "switch-back", "Codex, apply the review"),
+      provider: "codex",
+    });
+    assert.equal(
+      (await prepareRun(team, review.run_id)).provider,
+      "antigravity",
+      "later selections must not reroute queued work",
+    );
+    assert.equal((await prepareRun(team, back.run_id)).provider, "codex");
+    assert.equal(
+      (await prepareRun(team, review.run_id)).conversation,
+      root.item.id,
+    );
+    assert.equal(
+      (await prepareRun(team, back.run_id)).conversation,
+      root.item.id,
+    );
+    const retry = await execute(team, reviewReq);
+    assert.equal(retry.run_id, review.run_id);
+    assert.equal(
+      (await team.thread(root.item.id)).message.labels[RUN_LABEL],
+      back.run_id,
+    );
+    await assert.rejects(
+      execute(team, { ...reviewReq, provider: "codex" }),
+      /Cannot change a submitted reply/,
+    );
+    await assert.rejects(
+      execute(team, { ...reviewReq, run_worker: false }),
+      /Cannot change a submitted reply/,
+    );
+    const history = await prepareRun(team, back.run_id);
+    assert.ok(
+      history.history.some(
+        (m) => m.id === review.reply_id && m.provider === "antigravity",
+      ),
+    );
+    assert.ok(!history.history.some((m) => m.id === back.reply_id));
+    const page = await team.tasks.list({ state: "all", channel: RUN_CHANNEL });
+    assert.equal(page.tasks.length, 2);
+  }));
+
+test("retry after a lost switched-run response retains the selected agent", async () =>
+  fixture(async (team) => {
+    const root = await original(team);
+    let calls = 0;
+    const wrapped = new Proxy(team, {
+      get(target, prop) {
+        if (prop === "tasks")
+          return {
+            ...team.tasks,
+            create: async (...args) => {
+              const result = await team.tasks.create(...args);
+              if (++calls === 1) throw new Error("lost switched-run response");
+              return result;
+            },
+          };
+        const value = target[prop];
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    const req = {
+      ...request(root.id, "switch-retry", "Review it"),
+      provider: "antigravity",
+    };
+    await assert.rejects(execute(wrapped, req), /lost switched/);
+    await assert.rejects(
+      execute(team, { ...req, provider: "codex" }),
+      /Cannot change/,
+    );
+    const result = await execute(team, req);
+    assert.equal(
+      (await prepareRun(team, result.run_id)).provider,
+      "antigravity",
+    );
+    assert.equal((await team.thread(root.id)).replies.length, 1);
+  }));
+
+test("agent choice survives creation and retries; omitted reply selection uses the current agent", async () =>
+  fixture(async (team) => {
+    for (const provider of ["codex", "claude", "grok", "antigravity"]) {
+      const req = {
+        op: "create",
+        channel: "general",
+        text: "An agent task",
+        key: `agent-${provider}`,
+        provider,
+      };
+      const root = await execute(team, req);
+      assert.equal((await execute(team, req)).item.id, root.item.id);
+      const prepared = await prepareRun(team, root.item.id);
+      assert.equal(prepared.provider, provider);
+      assert.equal(prepared.provider_key.length, 64);
+      const follow = await execute(team, {
+        ...request(root.item.id, `follow-${provider}`, "Revise"),
+        provider,
+      });
+      const next = await prepareRun(team, follow.run_id);
+      assert.equal(next.provider, provider);
+      assert.equal(next.provider_key, prepared.provider_key);
+    }
+    await assert.rejects(
+      execute(team, {
+        op: "create",
+        channel: "general",
+        text: "Bad",
+        key: "unknown-provider",
+        provider: "not-configured",
+      }),
+      /Unknown agent/,
+    );
+  }));
+
 test("completed tasks get one follow-up job while feedback stays in the original thread", async () =>
   fixture(async (team) => {
     const root = await original(team);
@@ -150,6 +319,7 @@ test("feedback images remain attached to the original thread and enter the next 
         team,
         {
           ...request(root.id, key, "Use this screenshot for the revision."),
+          provider: "antigravity",
           attachments: [{ path, name: "revision.png" }],
         },
         directory,
@@ -159,6 +329,7 @@ test("feedback images remain attached to the original thread and enter the next 
       const context = await prepareRun(team, result.run_id);
       assert.equal(context.images.length, 1);
       assert.equal(context.images[0].id, thread.replies[0].attachments[0].id);
+      assert.equal(context.provider, "antigravity");
       const prepared = await execute(team, {
         op: "prepare",
         task: result.run_id,
@@ -173,6 +344,14 @@ test("feedback images remain attached to the original thread and enter the next 
         readFileSync(prepared.images[0].path),
         readFileSync(path),
       );
+      const back = await execute(team, {
+        ...request(root.id, "image-switch-back", "Use that screenshot again"),
+        provider: "codex",
+      });
+      const returned = await prepareRun(team, back.run_id);
+      assert.equal(returned.provider, "codex");
+      assert.equal(returned.images[0].id, context.images[0].id);
+      assert.deepEqual(returned.new_image_ids, []);
       const failing = new Proxy(team, {
         get(target, prop) {
           if (prop === "download")

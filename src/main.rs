@@ -1,5 +1,6 @@
 //! Pitwall's terminal entry point. State and rendering live in app and ui.
 mod app;
+mod approvals;
 mod board;
 mod composer;
 mod feed;

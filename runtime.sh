@@ -19,7 +19,6 @@ export SPROUT_NODE SPROUT_PYTHON SPROUT_CODEX SPROUT_BOARD
 
 pitwall_check_worker() {
   : "${SPROUT_TEAM:?Set SPROUT_TEAM in your Pitwall config or environment.}"
-  command -v "$SPROUT_CODEX" >/dev/null || { echo 'Install and sign in to the Codex CLI first.' >&2; return 1; }
   "$SPROUT_PYTHON" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)' || {
     echo 'The worker requires Python 3.11 or newer; set SPROUT_PYTHON to its executable.' >&2
     return 1

@@ -24,7 +24,7 @@ if [ -z "$version" ]; then
   latest=$(fetch -o /dev/null -w '%{url_effective}' "https://github.com/$repo/releases/latest")
   case "$latest" in "https://github.com/$repo/releases/tag/"*) version=${latest##*/} ;; *) fail 'Could not resolve the latest release.' ;; esac
 fi
-case "$version" in v[0-9]*) ;; *) fail 'PITWALL_VERSION must be a release tag such as v0.2.0.' ;; esac
+case "$version" in v[0-9]*) ;; *) fail 'PITWALL_VERSION must be a release tag such as v0.3.0.' ;; esac
 case "$version" in *[!A-Za-z0-9._-]*) fail 'Invalid release tag.' ;; esac
 install_dir=${PITWALL_INSTALL_DIR:-$HOME/.local/share/pitwall}
 bin_dir=${PITWALL_BIN_DIR:-$HOME/.local/bin}

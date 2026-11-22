@@ -361,7 +361,10 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     f.render_widget(conversation, right[0]);
     let body = if app.new_task {
         vec![
-            Line::styled("What should Codex work on?", Style::default().fg(p.text)),
+            Line::styled(
+                "What should the agent work on?",
+                Style::default().fg(p.text),
+            ),
             Line::raw(""),
             Line::raw("Describe the task below. Paste or attach screenshots for context."),
         ]
@@ -402,6 +405,18 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         )
     };
     f.render_widget(Paragraph::new(vec![Line::styled(if app.focus==Focus::Composer{" Enter: new line  ·  Cmd+Enter: send  ·  Cmd+V: paste  ·  Esc: conversation"}else{" Click to navigate  ·  Tab: focus  ·  n: new task  ·  c: reply  ·  ? help  ·  q: quit"},Style::default().fg(p.muted)),Line::styled(status,Style::default().fg(if app.error.is_some(){p.bad}else{p.muted}))]),rows[2]);
+    if app.approval.is_some() {
+        app.reset_previews();
+        app.ui.hits.clear();
+        draw_approval(f, app, &p);
+        return;
+    }
+    if app.model_picker.is_some() {
+        app.reset_previews();
+        app.ui.hits.clear();
+        draw_models(f, app, &p);
+        return;
+    }
     if app.file_picker.is_some() {
         app.reset_previews();
         app.ui.hits.clear();
@@ -471,6 +486,11 @@ fn draw_composer(f: &mut Frame, app: &mut App, area: Rect, p: &Palette, worker: 
         return;
     };
     let is_reply = editor.draft.thread.is_some();
+    let agent = app.providers.iter().find(|p| p.id == editor.draft.provider);
+    let agent_name = agent
+        .map(|p| p.label.as_str())
+        .unwrap_or(&editor.draft.provider);
+    let installed = agent.is_none_or(|p| p.installed);
     let title = if is_reply { " Reply " } else { " New task " };
     let block = panel(title.into(), app.focus == Focus::Composer, p);
     let inner = block.inner(area);
@@ -493,38 +513,29 @@ fn draw_composer(f: &mut Frame, app: &mut App, area: Rect, p: &Palette, worker: 
     ])
     .split(inner);
     let editable = !editor.draft.locked && !editor.submitting;
-    if is_reply {
-        let width = parts[0].width.min(18);
-        button(
-            f,
-            Rect::new(parts[0].x, parts[0].y, width, 3),
-            "Send to Codex",
-            p,
-            &mut app.ui.hits,
-            editable.then_some(Action::Mode(true)),
-            ButtonTone::selected(editor.draft.send_to_codex),
-        );
-        button(
-            f,
-            Rect::new(
-                parts[0].x + width + 1,
-                parts[0].y,
-                parts[0].width.saturating_sub(width + 1).min(17),
-                3,
-            ),
-            "Comment only",
-            p,
-            &mut app.ui.hits,
-            editable.then_some(Action::Mode(false)),
-            ButtonTone::selected(!editor.draft.send_to_codex),
-        );
-    } else {
-        f.render_widget(
-            Paragraph::new(format!("Create a task in #{}", editor.draft.channel))
-                .style(Style::default().fg(p.muted)),
-            parts[0],
-        );
-    }
+    let controls = Layout::horizontal([Constraint::Percentage(45), Constraint::Percentage(55)])
+        .split(parts[0]);
+    button(
+        f,
+        controls[0],
+        &format!("Agent: {agent_name} ›"),
+        p,
+        &mut app.ui.hits,
+        editable.then_some(Action::NextAgent),
+        ButtonTone::Normal,
+    );
+    button(
+        f,
+        controls[1],
+        &format!(
+            "Model: {} ›",
+            editor.draft.model.as_deref().unwrap_or("Default")
+        ),
+        p,
+        &mut app.ui.hits,
+        (editable && installed).then_some(Action::Models),
+        ButtonTone::Normal,
+    );
     app.ui.editor = parts[1];
     editor
         .textarea
@@ -541,9 +552,9 @@ fn draw_composer(f: &mut Frame, app: &mut App, area: Rect, p: &Palette, worker: 
         .textarea
         .set_selection_style(Style::default().bg(p.selected));
     editor.textarea.set_placeholder_text(if is_reply {
-        "Reply to Codex…"
+        "Reply to the agent…"
     } else {
-        "What should Codex work on?"
+        "What should the agent work on?"
     });
     editor
         .textarea
@@ -629,7 +640,26 @@ fn draw_composer(f: &mut Frame, app: &mut App, area: Rect, p: &Palette, worker: 
         editable.then_some(Action::Paste),
         ButtonTone::Normal,
     );
-    let can_send = !editor.submitting && !editor.draft.text.trim().is_empty() && !app.config.demo;
+    if is_reply {
+        let width = actions.width.saturating_sub(22 + send_width).min(18);
+        button(
+            f,
+            Rect::new(actions.x + 21, actions.y, width, 3),
+            if editor.draft.send_to_agent {
+                "Run agent ▾"
+            } else {
+                "Comment only ▾"
+            },
+            p,
+            &mut app.ui.hits,
+            editable.then_some(Action::Mode(!editor.draft.send_to_agent)),
+            ButtonTone::selected(editor.draft.send_to_agent),
+        );
+    }
+    let can_send = !editor.submitting
+        && !editor.draft.text.trim().is_empty()
+        && !app.config.demo
+        && (installed || (is_reply && !editor.draft.send_to_agent));
     let label = if editor.submitting {
         "Sending…"
     } else if editor.draft.locked {
@@ -655,14 +685,16 @@ fn draw_composer(f: &mut Frame, app: &mut App, area: Rect, p: &Palette, worker: 
     );
     let hint = if let Some(error) = &editor.error {
         error.clone()
+    } else if !installed && (!is_reply || editor.draft.send_to_agent) {
+        format!("{agent_name} is not installed · install and sign in, then Refresh")
     } else if editor.submitting {
         "Sending your message…".into()
-    } else if is_reply && !editor.draft.send_to_codex {
-        "Comment only · Codex will not run".into()
+    } else if is_reply && !editor.draft.send_to_agent {
+        "Comment only · no agent will run".into()
     } else if *worker == WorkerStatus::Online(WorkerState::Working) {
-        "Codex is working · your message will run next".into()
+        "Agent is working · your message will run next".into()
     } else if *worker == WorkerStatus::Online(WorkerState::Waiting) {
-        "Worker ready · sending starts Codex".into()
+        "Worker ready · sending starts the selected agent".into()
     } else {
         "Worker offline · your task will wait in the queue".into()
     };
@@ -874,7 +906,7 @@ pub(crate) fn conversation_lines(app: &App, p: &Palette) -> Vec<Line<'static>> {
                 p,
             );
         } else {
-            "Select a task to read its conversation.\n\nTab moves between columns.\n↑↓ selects; in this column it scrolls.\nr refreshes; v switches tasks / threads.\n\nPress n to create a task for the Codex queue worker."
+            "Select a task to read its conversation.\n\nTab moves between columns.\n↑↓ selects; in this column it scrolls.\nr refreshes; v switches tasks / threads.\n\nPress n to create a task for the agent queue worker."
         };
         return content(explanation, p);
     };
@@ -947,7 +979,7 @@ pub(crate) fn conversation_lines(app: &App, p: &Palette) -> Vec<Line<'static>> {
 fn draw_help(f: &mut Frame, p: &Palette) {
     let area = f.area();
     let width = area.width.min(76);
-    let height = area.height.min(18);
+    let height = area.height.min(19);
     let overlay = Rect::new(
         area.x + (area.width - width) / 2,
         area.y + (area.height - height) / 2,
@@ -969,7 +1001,8 @@ fn draw_help(f: &mut Frame, p: &Palette) {
         " ? / Esc                 Close help",
         "",
         " n / c / p               New task / reply to worker / images",
-        " Cmd+Enter sends · Enter adds a line · Comment only skips Codex.",
+        " Cmd+Enter sends · Enter adds a line · Comment only skips the agent.",
+        " Ctrl+G / Ctrl+O         Choose agent / model for your next message",
     ];
     f.render_widget(Clear, overlay);
     f.render_widget(
@@ -1007,5 +1040,186 @@ fn draw_preview(f: &mut Frame, preview: &mut images::Preview, p: &Palette) {
             inner.width,
             inner.height.saturating_sub(4),
         ),
+    );
+}
+
+fn draw_approval(f: &mut Frame, app: &mut App, p: &Palette) {
+    let Some(request) = &app.approval else {
+        return;
+    };
+    let area = f.area();
+    let modal = Rect::new(
+        area.x + 2,
+        area.y + 2,
+        area.width.saturating_sub(4),
+        area.height.saturating_sub(4),
+    );
+    f.render_widget(Clear, modal);
+    let block = panel(
+        format!(" {} · Permission required ", request.provider),
+        true,
+        p,
+    );
+    let inner = block.inner(modal);
+    f.render_widget(block, modal);
+    let rows = Layout::vertical([
+        Constraint::Length(3),
+        Constraint::Min(3),
+        Constraint::Length(3),
+        Constraint::Length(2),
+    ])
+    .split(inner);
+    f.render_widget(
+        Paragraph::new(format!("{}\nTask: {}", request.title, request.task))
+            .wrap(Wrap { trim: false })
+            .style(Style::default().fg(p.text)),
+        rows[0],
+    );
+    let paragraph = Paragraph::new(request.detail.clone())
+        .wrap(Wrap { trim: false })
+        .style(Style::default().fg(p.text));
+    let max = paragraph
+        .line_count(rows[1].width)
+        .saturating_sub(rows[1].height as usize)
+        .min(u16::MAX as usize) as u16;
+    app.approval_scroll = app.approval_scroll.min(max);
+    f.render_widget(paragraph.scroll((app.approval_scroll, 0)), rows[1]);
+    let width = rows[2].width / (request.options.len() as u16 + 1).max(1);
+    for (index, choice) in request.options.iter().enumerate() {
+        button(
+            f,
+            Rect::new(rows[2].x + index as u16 * width, rows[2].y, width, 3),
+            &format!("{}: {}", index + 1, choice.label),
+            p,
+            &mut app.ui.hits,
+            Some(Action::Approval(choice.id.clone())),
+            ButtonTone::Normal,
+        );
+    }
+    button(
+        f,
+        Rect::new(
+            rows[2].x + request.options.len() as u16 * width,
+            rows[2].y,
+            width,
+            3,
+        ),
+        "Dismiss · Esc",
+        p,
+        &mut app.ui.hits,
+        Some(Action::Approval(String::new())),
+        ButtonTone::Normal,
+    );
+    f.render_widget(
+        Paragraph::new(
+            "Choose a numbered option · ↑↓ scroll details · Esc declines · expires after 5 minutes",
+        )
+        .wrap(Wrap { trim: false })
+        .style(Style::default().fg(p.muted)),
+        rows[3],
+    );
+}
+
+fn draw_models(f: &mut Frame, app: &mut App, p: &Palette) {
+    let Some(picker) = app.model_picker.as_mut() else {
+        return;
+    };
+    let area = f.area();
+    let width = area.width.saturating_sub(4).min(96);
+    let height = area.height.saturating_sub(4).min(28);
+    let modal = Rect::new(
+        area.x + (area.width - width) / 2,
+        area.y + (area.height - height) / 2,
+        width,
+        height,
+    );
+    f.render_widget(Clear, modal);
+    let name = app
+        .providers
+        .iter()
+        .find(|a| a.id == picker.provider)
+        .map(|a| a.label.as_str())
+        .unwrap_or(&picker.provider);
+    let block = panel(format!(" Models · {name} "), true, p).style(Style::default().bg(p.raised));
+    let inner = block.inner(modal);
+    f.render_widget(block, modal);
+    let rows = Layout::vertical([
+        Constraint::Length(2),
+        Constraint::Min(3),
+        Constraint::Length(3),
+    ])
+    .split(inner);
+    let status = if picker.loading {
+        "Loading choices from the installed agent…"
+    } else if let Some(error) = &picker.error {
+        error
+    } else {
+        "Choose the model for this message · ↑↓ move · Enter selects · Esc closes"
+    };
+    f.render_widget(
+        Paragraph::new(status)
+            .wrap(Wrap { trim: false })
+            .style(Style::default().fg(p.muted)),
+        rows[0],
+    );
+    if !picker.loading && picker.error.is_none() {
+        let mut items = vec![ListItem::new(vec![
+            Line::raw("Agent default"),
+            Line::styled(
+                "Use the agent's default model",
+                Style::default().fg(p.muted),
+            ),
+        ])];
+        items.extend(picker.models.iter().map(|model| {
+            ListItem::new(vec![
+                Line::raw(model.label.clone()),
+                Line::styled(
+                    model
+                        .description
+                        .as_deref()
+                        .filter(|s| !s.is_empty())
+                        .unwrap_or(&model.id)
+                        .to_owned(),
+                    Style::default().fg(p.muted),
+                ),
+            ])
+        }));
+        picker.state.select(Some(picker.selected));
+        f.render_stateful_widget(
+            List::new(items)
+                .style(Style::default().fg(p.text))
+                .highlight_style(Style::default().bg(p.selected).fg(p.accent))
+                .highlight_symbol("› "),
+            rows[1],
+            &mut picker.state,
+        );
+        let offset = picker.state.offset();
+        for index in offset..=(offset + rows[1].height as usize / 2).min(picker.models.len()) {
+            let y = rows[1].y + ((index - offset) * 2) as u16;
+            if y + 2 <= rows[1].bottom() {
+                app.ui.hits.push((
+                    Rect::new(rows[1].x, y, rows[1].width, 2),
+                    Action::ChooseModel(index),
+                ));
+            }
+        }
+    }
+    button(
+        f,
+        Rect::new(rows[2].x, rows[2].y, 18, 3),
+        "Refresh · r",
+        p,
+        &mut app.ui.hits,
+        (!picker.loading).then_some(Action::Models),
+        ButtonTone::Normal,
+    );
+    button(
+        f,
+        Rect::new(rows[2].right().saturating_sub(16), rows[2].y, 16, 3),
+        "Close · Esc",
+        p,
+        &mut app.ui.hits,
+        Some(Action::CloseModels),
+        ButtonTone::Normal,
     );
 }

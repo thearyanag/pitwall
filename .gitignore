@@ -8,7 +8,7 @@
 /worker/status.json
 /worker/queue.lock
 /worker/pending-task.json
-/worker/__pycache__/
+__pycache__/
 
 /worker/images/
 /worker/downloads/
@@ -23,6 +23,9 @@
 .env.*
 !.env.example
 /worker/cache/
+/worker/sessions/
+/worker/approvals/
+/worker/agents.json
 /worker/task.json
 /worker/demo-task.txt
 /UI-FLOW-VERIFICATION.md

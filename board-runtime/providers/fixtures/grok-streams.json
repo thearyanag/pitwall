@@ -1,0 +1,156 @@
+[
+  {
+    "sessionId": "native-session",
+    "update": {
+      "sessionUpdate": "agent_message_chunk",
+      "content": {
+        "type": "text",
+        "text": "P"
+      }
+    },
+    "_meta": {
+      "streamStartMs": 1,
+      "isReplay": false
+    }
+  },
+  {
+    "sessionId": "native-session",
+    "update": {
+      "sessionUpdate": "agent_message_chunk",
+      "content": {
+        "type": "text",
+        "text": "IT"
+      }
+    },
+    "_meta": {
+      "streamStartMs": 1,
+      "isReplay": false
+    }
+  },
+  {
+    "sessionId": "native-session",
+    "update": {
+      "sessionUpdate": "agent_message_chunk",
+      "content": {
+        "type": "text",
+        "text": "WALL"
+      }
+    },
+    "_meta": {
+      "streamStartMs": 1,
+      "isReplay": false
+    }
+  },
+  {
+    "sessionId": "native-session",
+    "update": {
+      "sessionUpdate": "agent_message_chunk",
+      "content": {
+        "type": "text",
+        "text": "_"
+      }
+    },
+    "_meta": {
+      "streamStartMs": 1,
+      "isReplay": false
+    }
+  },
+  {
+    "sessionId": "native-session",
+    "update": {
+      "sessionUpdate": "agent_message_chunk",
+      "content": {
+        "type": "text",
+        "text": "OK"
+      }
+    },
+    "_meta": {
+      "streamStartMs": 1,
+      "isReplay": false
+    }
+  },
+  {
+    "sessionId": "native-session",
+    "update": {
+      "sessionUpdate": "agent_message_chunk",
+      "content": {
+        "type": "text",
+        "text": "P"
+      }
+    },
+    "_meta": {
+      "streamStartMs": 2,
+      "isReplay": false
+    }
+  },
+  {
+    "sessionId": "native-session",
+    "update": {
+      "sessionUpdate": "agent_message_chunk",
+      "content": {
+        "type": "text",
+        "text": "IT"
+      }
+    },
+    "_meta": {
+      "streamStartMs": 2,
+      "isReplay": false
+    }
+  },
+  {
+    "sessionId": "native-session",
+    "update": {
+      "sessionUpdate": "agent_message_chunk",
+      "content": {
+        "type": "text",
+        "text": "WALL"
+      }
+    },
+    "_meta": {
+      "streamStartMs": 2,
+      "isReplay": false
+    }
+  },
+  {
+    "sessionId": "native-session",
+    "update": {
+      "sessionUpdate": "agent_message_chunk",
+      "content": {
+        "type": "text",
+        "text": "_"
+      }
+    },
+    "_meta": {
+      "streamStartMs": 2,
+      "isReplay": false
+    }
+  },
+  {
+    "sessionId": "native-session",
+    "update": {
+      "sessionUpdate": "agent_message_chunk",
+      "content": {
+        "type": "text",
+        "text": "OK"
+      }
+    },
+    "_meta": {
+      "streamStartMs": 2,
+      "isReplay": false
+    }
+  },
+  {
+    "sessionId": "native-session",
+    "update": {
+      "sessionUpdate": "agent_message_chunk",
+      "content": {
+        "type": "text",
+        "text": "OLD REPLAY"
+      }
+    },
+    "_meta": {
+      "streamStartMs": 1,
+      "isReplay": true
+    }
+  }
+]

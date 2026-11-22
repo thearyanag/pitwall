@@ -84,8 +84,28 @@ pub struct Conversation {
     #[serde(default)]
     pub reply_count: usize,
 }
+#[derive(Clone, Debug, Deserialize)]
+pub struct AgentInfo {
+    pub id: String,
+    pub label: String,
+    pub installed: bool,
+}
+#[derive(Clone, Debug, Deserialize)]
+pub struct ModelChoice {
+    pub id: String,
+    pub label: String,
+    #[serde(default)]
+    pub description: Option<String>,
+}
+#[derive(Deserialize)]
+pub struct ModelCatalog {
+    pub provider: String,
+    pub models: Vec<ModelChoice>,
+}
 #[derive(Deserialize)]
 pub struct InitData {
+    #[serde(default)]
+    pub providers: Vec<AgentInfo>,
     pub identity: String,
     pub channels: Vec<Channel>,
 }
@@ -103,6 +123,9 @@ pub struct CreatedData {
 #[derive(Clone, Debug)]
 pub enum Request {
     Init,
+    Models {
+        provider: String,
+    },
     List {
         channel: String,
         mode: ViewMode,
@@ -113,12 +136,16 @@ pub enum Request {
         id: String,
     },
     Create {
+        provider: String,
+        model: Option<String>,
         channel: String,
         text: String,
         key: String,
         attachments: Vec<crate::images::LocalImage>,
     },
     Reply {
+        provider: String,
+        model: Option<String>,
         run_worker: bool,
         thread: String,
         text: String,
@@ -156,6 +183,7 @@ fn fetch(
 ) -> Result<Value, String> {
     let mut input = match req {
         Request::Init => json!({"op":"init"}),
+        Request::Models { provider } => json!({"op":"models", "provider":provider}),
         Request::List {
             channel,
             mode,
@@ -164,29 +192,37 @@ fn fetch(
         } => json!({"op":"list","channel":channel,"mode":mode,"cursor":cursor}),
         Request::Thread { id } => json!({"op":"thread","id":id}),
         Request::Create {
+            provider,
+            model,
             channel,
             text,
             key,
             attachments,
         } => {
-            json!({"op":"create","channel":channel,"text":text,"key":key,"attachments":attachments})
+            json!({"op":"create","provider":provider,"model":model,"channel":channel,"text":text,"key":key,"attachments":attachments})
         }
         Request::Image { id, thread } => json!({"op":"image","id":id,"thread":thread}),
         Request::Reply {
+            provider,
+            model,
             run_worker,
             thread,
             text,
             key,
             attachments,
         } => {
-            json!({"op":"reply","thread":thread,"text":text,"key":key,"attachments":attachments,"run_worker":run_worker})
+            json!({"op":"reply","provider":provider,"model":model,"thread":thread,"text":text,"key":key,"attachments":attachments,"run_worker":run_worker})
         }
     };
     input["team"] = json!(config.team);
     input["board"] = json!(config.board);
     input["demo"] = json!(config.demo);
     let mut child = Command::new(&config.node)
-        .arg(&config.adapter)
+        .arg(if matches!(req, Request::Models { .. }) {
+            config.adapter.with_file_name("discover-models.mjs")
+        } else {
+            config.adapter.clone()
+        })
         .arg("-")
         .env("SPROUT_STATE_DIR", config.state_dir())
         .stdin(Stdio::piped())

@@ -90,7 +90,7 @@ try:
 except BlockingIOError:
     raise SystemExit("A Pitwall queue worker is already running in this workspace.")
 print(
-    f"Pitwall Codex queue worker · {TEAM} / {BOARD}\nWaiting through Board for your Pitwall tasks across channels. One task at a time. Ctrl+C stops.",
+    f"Pitwall agent queue worker · {TEAM} / {BOARD}\nWaiting through Board for your Pitwall tasks across channels. One task at a time. Ctrl+C stops.",
     flush=True,
 )
 backoff = 3

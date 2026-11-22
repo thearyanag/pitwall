@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "target": "ES2024",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "skipLibCheck": true,
+    "strict": false,
+    "types": ["node"]
+  },
+  "include": [
+    "providers/*.mjs",
+    "providers/contract.d.ts",
+    "agent-runner.mjs",
+    "discover-models.mjs"
+  ]
+}

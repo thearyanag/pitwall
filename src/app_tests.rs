@@ -43,6 +43,155 @@ fn click(app: &mut App, action: Action) {
         modifiers: KeyModifiers::NONE,
     });
 }
+
+#[test]
+fn model_picker_applies_saves_and_pins_selection_without_changing_the_agent() {
+    let (mut app, dir) = populated("model-picker");
+    let mut terminal = Terminal::new(TestBackend::new(120, 36)).unwrap();
+    terminal.draw(|f| draw_ui(f, &mut app)).unwrap();
+    click(&mut app, Action::Models);
+    assert!(app.model_picker.as_ref().unwrap().loading);
+    app.handle_key(KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE));
+    assert!(!app.new_task);
+    app.apply(Response{generation:app.generation, request:Request::Models{provider:"codex".into()}, data:Ok(json!({"provider":"codex","models":[{"id":"model-a","label":"Model A"},{"id":"model-b","label":"Model B"}]}))});
+    terminal.draw(|f| draw_ui(f, &mut app)).unwrap();
+    click(&mut app, Action::ChooseModel(2));
+    assert_eq!(
+        app.composer.as_ref().unwrap().draft.model.as_deref(),
+        Some("model-b")
+    );
+    assert_eq!(app.composer.as_ref().unwrap().draft.provider, "codex");
+    app.open_composer();
+    app.open_reply();
+    assert_eq!(
+        app.composer.as_ref().unwrap().draft.model.as_deref(),
+        Some("model-b")
+    );
+    app.composer
+        .as_mut()
+        .unwrap()
+        .insert("Continue with this model");
+    app.submit_draft();
+    assert!(matches!(&app.pending,Some(Request::Reply{model:Some(model),..}) if model=="model-b"));
+    app.action(Action::Models);
+    assert!(app.model_picker.is_none());
+    drop(app);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn agent_picker_switches_replies_and_preserves_saved_choices() {
+    let (mut app, dir) = populated("agent-picker");
+    app.providers = vec![
+        crate::board::AgentInfo {
+            id: "codex".into(),
+            label: "Codex".into(),
+            installed: true,
+        },
+        crate::board::AgentInfo {
+            id: "custom-agent".into(),
+            label: "Custom agent".into(),
+            installed: true,
+        },
+    ];
+    app.open_composer();
+    let mut terminal = Terminal::new(TestBackend::new(160, 48)).unwrap();
+    terminal.draw(|f| draw_ui(f, &mut app)).unwrap();
+    click(&mut app, Action::NextAgent);
+    assert_eq!(
+        app.composer.as_ref().unwrap().draft.provider,
+        "custom-agent"
+    );
+    app.composer.as_mut().unwrap().insert("Use this agent");
+    app.save_draft();
+    app.open_reply();
+    app.open_composer();
+    assert_eq!(
+        app.composer.as_ref().unwrap().draft.provider,
+        "custom-agent"
+    );
+    app.items[0].labels = vec!["pitwall.agent=codex".into()];
+    app.open_reply();
+    terminal.draw(|f| draw_ui(f, &mut app)).unwrap();
+    click(&mut app, Action::NextAgent);
+    assert_eq!(
+        app.composer.as_ref().unwrap().draft.provider,
+        "custom-agent"
+    );
+    app.composer
+        .as_mut()
+        .unwrap()
+        .insert("Review it with another agent");
+    app.save_draft();
+    app.open_composer();
+    app.open_reply();
+    assert_eq!(
+        app.composer.as_ref().unwrap().draft.provider,
+        "custom-agent"
+    );
+    app.submit_draft();
+    assert!(
+        matches!(&app.pending, Some(Request::Reply { provider, .. }) if provider == "custom-agent")
+    );
+    app.action(Action::NextAgent);
+    assert_eq!(
+        app.composer.as_ref().unwrap().draft.provider,
+        "custom-agent",
+        "submitted choice must remain pinned"
+    );
+    drop(app);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn agent_picker_new_task_selection_is_sent() {
+    let (mut app, dir) = populated("new-agent");
+    app.open_composer();
+    app.composer.as_mut().unwrap().draft.provider = "custom-agent".into();
+    app.composer.as_mut().unwrap().insert("Do the task");
+    app.submit_draft();
+    assert!(
+        matches!(&app.pending, Some(Request::Create { provider, .. }) if provider == "custom-agent")
+    );
+    drop(app);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn approvals_are_scoped_clickable_and_block_underlying_navigation() {
+    let (mut app, dir) = populated("approvals");
+    let path = app.config.state_dir().join("approvals");
+    std::fs::create_dir_all(&path).unwrap();
+    let id = "00000000-0000-0000-0000-000000000001";
+    let request = json!({ "id":id, "title":"Edit README", "detail":"line\n".repeat(100),
+        "options":[{"id":"native-allow", "label":"Allow once"},{"id":"native-deny", "label":"Deny"}],
+        "provider":"Test", "task":"task-a", "team":"test", "board":"General", "expires":u64::MAX });
+    std::fs::write(path.join(format!("{id}.request.json")), request.to_string()).unwrap();
+    app.approval = crate::approvals::Approval::read(&app.config);
+    assert!(app.approval.is_some());
+    let mut terminal = Terminal::new(TestBackend::new(100, 28)).unwrap();
+    terminal.draw(|f| draw_ui(f, &mut app)).unwrap();
+    assert!(app
+        .ui
+        .hits
+        .iter()
+        .all(|(_, a)| matches!(a, Action::Approval(_))));
+    app.handle_key(KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE));
+    assert!(!app.new_task);
+    app.handle_key(KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE));
+    assert!(app.approval_scroll > 0);
+    click(&mut app, Action::Approval("native-deny".into()));
+    let response: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(path.join(format!("{id}.response.json"))).unwrap())
+            .unwrap();
+    assert_eq!(response["choice"], "native-deny");
+    assert!(crate::approvals::Approval::read(&app.config).is_none());
+    app.config.team = "other".into();
+    std::fs::remove_file(path.join(format!("{id}.response.json"))).unwrap();
+    assert!(crate::approvals::Approval::read(&app.config).is_none());
+    drop(app);
+    let _ = std::fs::remove_dir_all(dir);
+}
 fn refresh_scroll_test(app: &mut App, lines: usize) {
     app.apply(Response {
         generation: app.generation,
@@ -144,7 +293,7 @@ fn visible_composer_and_mouse_comment_send_keep_the_mode_pinned() {
     terminal.draw(|f| draw_ui(f, &mut app)).unwrap();
     assert!(app.ui.editor.height >= 3);
     click(&mut app, Action::Mode(false));
-    assert!(!app.composer.as_ref().unwrap().draft.send_to_codex);
+    assert!(!app.composer.as_ref().unwrap().draft.send_to_agent);
     app.focus = Focus::Composer;
     for c in "Thanks!".chars() {
         app.handle_key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
@@ -161,9 +310,9 @@ fn visible_composer_and_mouse_comment_send_keep_the_mode_pinned() {
     let request = app.pending.clone().unwrap();
     let generation = app.generation;
     app.action(Action::Mode(true));
-    assert!(!app.composer.as_ref().unwrap().draft.send_to_codex);
+    assert!(!app.composer.as_ref().unwrap().draft.send_to_agent);
     app.apply(Response{generation,request,data:Ok(json!({"channel":"general","item":{"id":"task-a","title":"First task","state":"completed","author":"Test","replies":1,"labels":[]}}))});
-    assert!(app.composer.as_ref().unwrap().draft.send_to_codex);
+    assert!(app.composer.as_ref().unwrap().draft.send_to_agent);
     assert!(app.composer.as_ref().unwrap().draft.text.is_empty());
     assert!(app.toast.as_ref().unwrap().0.contains("not started"));
     drop(app);
@@ -299,12 +448,12 @@ fn help_renders_centered_in_both_themes_and_closes_cleanly() {
             terminal.draw(|f| draw_ui(f, &mut app)).unwrap();
             let buffer = terminal.backend().buffer();
             let x = (width - 76) / 2;
-            let y = (height - 18) / 2;
+            let y = (height - 19) / 2;
             assert_eq!(buffer[(x, y)].symbol(), "╭");
-            assert_eq!(buffer[(x + 75, y + 17)].symbol(), "╯");
+            assert_eq!(buffer[(x + 75, y + 18)].symbol(), "╯");
             assert_eq!(buffer[(x, y)].fg, p.focus);
             assert_eq!(buffer[(x + 1, y + 1)].fg, p.text);
-            for row in y..y + 18 {
+            for row in y..y + 19 {
                 for col in x..x + 76 {
                     assert_eq!(buffer[(col, row)].bg, p.raised);
                 }
@@ -329,7 +478,7 @@ fn help_renders_centered_in_both_themes_and_closes_cleanly() {
                 "q / Ctrl-C",
                 "? / Esc",
                 "New task",
-                "Comment only skips Codex",
+                "Comment only skips the agent",
             ] {
                 assert!(text.contains(label), "missing {label} at {width}x{height}");
             }

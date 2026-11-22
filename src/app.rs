@@ -35,13 +35,30 @@ pub(crate) enum Action {
     Paste,
     Attach,
     Mode(bool),
+    NextAgent,
+    Models,
+    ChooseModel(usize),
+    CloseModels,
+    Approval(String),
     Expand(usize),
     Remove(usize),
     NextImages,
     ClosePreview,
 }
+pub(crate) struct ModelPicker {
+    pub provider: String,
+    pub models: Vec<crate::board::ModelChoice>,
+    pub selected: usize,
+    pub state: ListState,
+    pub loading: bool,
+    pub error: Option<String>,
+}
 pub(crate) struct App {
     pub(crate) config: Config,
+    pub(crate) providers: Vec<crate::board::AgentInfo>,
+    pub(crate) model_picker: Option<ModelPicker>,
+    pub(crate) approval: Option<crate::approvals::Approval>,
+    pub(crate) approval_scroll: u16,
     pub(crate) worker: Worker,
     feed: Option<Feed>,
     pub(crate) feed_state: FeedState,
@@ -88,6 +105,10 @@ impl App {
         let worker = Worker::new(config.clone());
         Self {
             config,
+            providers: vec![],
+            model_picker: None,
+            approval: None,
+            approval_scroll: 0,
             worker,
             feed: None,
             feed_state: FeedState::Connecting,
@@ -288,6 +309,17 @@ impl App {
         let data = match response.data {
             Ok(data) => data,
             Err(error) => {
+                if let Request::Models { provider } = &response.request {
+                    if let Some(picker) = self
+                        .model_picker
+                        .as_mut()
+                        .filter(|p| &p.provider == provider)
+                    {
+                        picker.loading = false;
+                        picker.error = Some(error);
+                    }
+                    return;
+                }
                 if let Some(editor) = self.composer.as_mut() {
                     if matches!(
                         response.request,
@@ -303,6 +335,28 @@ impl App {
         };
         let result: Result<(), String> = (|| {
             match response.request {
+                Request::Models { provider } => {
+                    let catalog: crate::board::ModelCatalog =
+                        serde_json::from_value(data).map_err(|e| format!("Model response: {e}"))?;
+                    if catalog.provider != provider {
+                        return Err("Model catalog belongs to another agent.".into());
+                    }
+                    if let Some(picker) = self
+                        .model_picker
+                        .as_mut()
+                        .filter(|p| p.provider == provider)
+                    {
+                        picker.loading = false;
+                        picker.models = catalog.models;
+                        picker.selected = self
+                            .composer
+                            .as_ref()
+                            .and_then(|e| e.draft.model.as_ref())
+                            .and_then(|id| picker.models.iter().position(|m| &m.id == id))
+                            .map(|i| i + 1)
+                            .unwrap_or(0);
+                    }
+                }
                 Request::Image { .. } => {
                     let image: DownloadedImage =
                         serde_json::from_value(data).map_err(|e| format!("Image response: {e}"))?;
@@ -332,11 +386,11 @@ impl App {
                     self.new_task = false;
                     self.toast = Some((
                         if comment {
-                            "Comment posted. Codex was not started."
+                            "Comment posted. Agent was not started."
                         } else if is_reply {
-                            "Feedback queued for Codex."
+                            "Feedback queued for the agent."
                         } else {
-                            "Task queued for Codex."
+                            "Task queued for the agent."
                         }
                         .into(),
                         Instant::now(),
@@ -366,6 +420,7 @@ impl App {
                         .map_err(|e| format!("Board identity response: {e}"))?;
                     let previous = self.channel_path();
                     self.identity = data.identity;
+                    self.providers = data.providers;
                     self.channels = data.channels;
                     self.loaded = true;
                     self.channel = previous
@@ -554,6 +609,28 @@ impl App {
         };
         match composer::Composer::load_for(&self.config, channel, thread, title) {
             Ok(mut editor) => {
+                if editor.draft.thread.is_some() && !editor.restored {
+                    editor.draft.provider = self
+                        .items
+                        .get(self.item)
+                        .and_then(|item| {
+                            item.labels
+                                .iter()
+                                .find_map(|label| label.strip_prefix("pitwall.agent="))
+                        })
+                        .unwrap_or("codex")
+                        .into();
+                    editor.draft.model = self
+                        .items
+                        .get(self.item)
+                        .and_then(|item| {
+                            item.labels
+                                .iter()
+                                .find_map(|label| label.strip_prefix("pitwall.model="))
+                        })
+                        .filter(|model| *model != "default")
+                        .map(str::to_owned);
+                }
                 editor.refresh_preview(&self.image_picker);
                 self.composer = Some(editor);
             }
@@ -602,7 +679,9 @@ impl App {
         }
     }
     fn action(&mut self, action: Action) {
-        if self.composer.as_ref().is_some_and(|e| e.submitting) {
+        if self.composer.as_ref().is_some_and(|e| e.submitting)
+            && !matches!(action, Action::Approval(_))
+        {
             return;
         }
         match action {
@@ -645,11 +724,82 @@ impl App {
                 self.save_draft();
             }
             Action::Attach => self.attach_files(),
+            Action::Approval(choice) => {
+                if let Some(approval) = &self.approval {
+                    if let Err(error) = approval.respond(&self.config, &choice) {
+                        self.error = Some(error);
+                    } else {
+                        self.approval = None;
+                    }
+                }
+            }
+            Action::Models => {
+                let Some(editor) = &self.composer else {
+                    return;
+                };
+                if editor.draft.locked || editor.submitting {
+                    return;
+                }
+                let provider = editor.draft.provider.clone();
+                self.model_picker = Some(ModelPicker {
+                    provider: provider.clone(),
+                    models: vec![],
+                    selected: 0,
+                    state: ListState::default(),
+                    loading: true,
+                    error: None,
+                });
+                self.request(Request::Models { provider });
+            }
+            Action::ChooseModel(index) => {
+                let Some(picker) = &self.model_picker else {
+                    return;
+                };
+                if picker.loading || picker.error.is_some() {
+                    return;
+                }
+                let model = if index == 0 {
+                    None
+                } else {
+                    let Some(choice) = picker.models.get(index - 1) else {
+                        return;
+                    };
+                    Some(choice.id.clone())
+                };
+                if let Some(editor) = self.composer.as_mut() {
+                    if editor.draft.provider == picker.provider
+                        && !editor.draft.locked
+                        && !editor.submitting
+                    {
+                        editor.draft.model = model;
+                    }
+                }
+                self.model_picker = None;
+                self.save_draft();
+                self.focus = Focus::Composer;
+            }
+            Action::CloseModels => self.model_picker = None,
+            Action::NextAgent => {
+                if let Some(editor) = self.composer.as_mut() {
+                    if !editor.draft.locked && !self.providers.is_empty() {
+                        let index = self
+                            .providers
+                            .iter()
+                            .position(|p| p.id == editor.draft.provider)
+                            .unwrap_or(0);
+                        editor.draft.provider = self.providers[(index + 1) % self.providers.len()]
+                            .id
+                            .clone();
+                        editor.draft.model = None;
+                        self.save_draft();
+                    }
+                }
+            }
             Action::Mode(run) => {
                 self.focus = Focus::Composer;
                 if let Some(editor) = self.composer.as_mut() {
                     if !editor.draft.locked {
-                        editor.draft.send_to_codex = run;
+                        editor.draft.send_to_agent = run;
                         self.save_draft();
                     }
                 }
@@ -694,6 +844,40 @@ impl App {
         }
     }
     fn handle_mouse(&mut self, mouse: MouseEvent) {
+        if self.approval.is_some() {
+            match mouse.kind {
+                MouseEventKind::Down(MouseButton::Left) => {
+                    if let Some(action @ Action::Approval(_)) =
+                        self.ui.action(mouse.column, mouse.row)
+                    {
+                        self.action(action);
+                    }
+                }
+                MouseEventKind::ScrollDown => {
+                    self.approval_scroll = self.approval_scroll.saturating_add(3)
+                }
+                MouseEventKind::ScrollUp => {
+                    self.approval_scroll = self.approval_scroll.saturating_sub(3)
+                }
+                _ => {}
+            }
+            return;
+        }
+        if let Some(picker) = self.model_picker.as_mut() {
+            match mouse.kind {
+                MouseEventKind::Down(MouseButton::Left) => {
+                    if let Some(action) = self.ui.action(mouse.column, mouse.row) {
+                        self.action(action);
+                    }
+                }
+                MouseEventKind::ScrollDown => {
+                    picker.selected = (picker.selected + 1).min(picker.models.len())
+                }
+                MouseEventKind::ScrollUp => picker.selected = picker.selected.saturating_sub(1),
+                _ => {}
+            }
+            return;
+        }
         if self.composer.as_ref().is_some_and(|e| e.submitting) {
             return;
         }
@@ -866,6 +1050,15 @@ impl App {
         if editor.submitting || editor.draft.text.trim().is_empty() || self.config.demo {
             return;
         }
+        if (editor.draft.thread.is_none() || editor.draft.send_to_agent)
+            && self
+                .providers
+                .iter()
+                .any(|p| p.id == editor.draft.provider && !p.installed)
+        {
+            editor.error = Some("Install and sign in to the selected agent, then Refresh.".into());
+            return;
+        }
         let was_attempted = editor.draft.locked;
         editor.draft.locked = true;
         if let Err(error) = editor.save(&self.config) {
@@ -877,7 +1070,9 @@ impl App {
         editor.error = None;
         let request = if let Some(thread) = &editor.draft.thread {
             Request::Reply {
-                run_worker: editor.draft.send_to_codex,
+                provider: editor.draft.provider.clone(),
+                model: editor.draft.model.clone(),
+                run_worker: editor.draft.send_to_agent,
                 thread: thread.clone(),
                 text: editor.draft.text.clone(),
                 key: editor.draft.key.clone(),
@@ -885,6 +1080,8 @@ impl App {
             }
         } else {
             Request::Create {
+                provider: editor.draft.provider.clone(),
+                model: editor.draft.model.clone(),
                 channel: editor.draft.channel.clone(),
                 text: editor.draft.text.clone(),
                 key: editor.draft.key.clone(),
@@ -897,6 +1094,48 @@ impl App {
         if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
             self.save_draft();
             return true;
+        }
+        if let Some(approval) = &self.approval {
+            match key.code {
+                KeyCode::Char(c) if ('1'..='9').contains(&c) => {
+                    if let Some(option) = approval.options.get(c as usize - '1' as usize) {
+                        self.action(Action::Approval(option.id.clone()));
+                    }
+                }
+                KeyCode::Esc => self.action(Action::Approval(String::new())),
+                KeyCode::Down | KeyCode::PageDown => {
+                    self.approval_scroll = self.approval_scroll.saturating_add(5)
+                }
+                KeyCode::Up | KeyCode::PageUp => {
+                    self.approval_scroll = self.approval_scroll.saturating_sub(5)
+                }
+                _ => {}
+            }
+            return false;
+        }
+        if let Some(picker) = self.model_picker.as_mut() {
+            match key.code {
+                KeyCode::Esc => self.model_picker = None,
+                KeyCode::Up => picker.selected = picker.selected.saturating_sub(1),
+                KeyCode::Down => picker.selected = (picker.selected + 1).min(picker.models.len()),
+                KeyCode::Home => picker.selected = 0,
+                KeyCode::End => picker.selected = picker.models.len(),
+                KeyCode::Enter => {
+                    let selected = picker.selected;
+                    self.action(Action::ChooseModel(selected));
+                }
+                KeyCode::Char('r') if !picker.loading => self.action(Action::Models),
+                _ => {}
+            }
+            return false;
+        }
+        if key.code == KeyCode::Char('o') && key.modifiers.contains(KeyModifiers::CONTROL) {
+            self.action(Action::Models);
+            return false;
+        }
+        if key.code == KeyCode::Char('g') && key.modifiers.contains(KeyModifiers::CONTROL) {
+            self.action(Action::NextAgent);
+            return false;
         }
         if self.composer.as_ref().is_some_and(|e| e.submitting) {
             return false;
@@ -1071,6 +1310,11 @@ pub(crate) fn run(terminal: &mut DefaultTerminal, app: &mut App) -> io::Result<(
             app.refresh_from_feed();
         }
         if dirty || last_paint.elapsed() >= Duration::from_secs(1) {
+            let approval = crate::approvals::Approval::read(&app.config);
+            if approval.as_ref().map(|a| &a.id) != app.approval.as_ref().map(|a| &a.id) {
+                app.approval_scroll = 0;
+            }
+            app.approval = approval;
             app.reset_previews();
             terminal.draw(|f| ui::draw(f, app))?;
             let previews = app
@@ -1096,6 +1340,9 @@ pub(crate) fn run(terminal: &mut DefaultTerminal, app: &mut App) -> io::Result<(
                     dirty = true;
                 }
                 Event::Paste(text) => {
+                    if app.approval.is_some() || app.model_picker.is_some() {
+                        continue;
+                    }
                     if let Some(picker) = app.file_picker.as_mut() {
                         picker.input.push_str(&text);
                         dirty = true;

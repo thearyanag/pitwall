@@ -23,16 +23,25 @@ pub struct Draft {
     #[serde(default)]
     pub thread_title: String,
     #[serde(default = "default_true")]
-    pub send_to_codex: bool,
+    #[serde(alias = "send_to_codex")]
+    pub send_to_agent: bool,
+    #[serde(default = "default_provider")]
+    pub provider: String,
+    #[serde(default)]
+    pub model: Option<String>,
     #[serde(default)]
     pub images: Vec<LocalImage>,
     #[serde(default = "default_true")]
     pub locked: bool,
 }
+pub fn default_provider() -> String {
+    "codex".into()
+}
 fn default_true() -> bool {
     true
 }
 pub struct Composer {
+    pub restored: bool,
     pub draft: Draft,
     pub textarea: TextArea<'static>,
     pub submitting: bool,
@@ -60,7 +69,9 @@ impl Composer {
             board: config.board.clone(),
             thread: None,
             thread_title: String::new(),
-            send_to_codex: true,
+            send_to_agent: true,
+            provider: default_provider(),
+            model: None,
             images: vec![],
             locked: false,
         })
@@ -77,6 +88,7 @@ impl Composer {
         textarea.move_cursor(CursorMove::Bottom);
         textarea.move_cursor(CursorMove::End);
         Self {
+            restored: false,
             textarea,
             draft,
             submitting: false,
@@ -280,7 +292,9 @@ impl Composer {
         if draft.team != config.team || draft.board != config.board {
             return Err("A pending task belongs to a different team/board. Reopen Pitwall with that target to resolve it first.".into());
         }
-        Ok(Some(Self::from_draft(draft)))
+        let mut editor = Self::from_draft(draft);
+        editor.restored = true;
+        Ok(Some(editor))
     }
 }
 pub fn draft_path(config: &Config, channel: &str, thread: Option<&str>) -> PathBuf {
@@ -322,6 +336,19 @@ fn clear_file(path: PathBuf) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn legacy_codex_draft_keeps_comment_mode_and_retry_identity() {
+        let draft: Draft = serde_json::from_value(serde_json::json!({
+            "channel":"general", "text":"Keep this note", "key":"original-key",
+            "team":"test", "board":"General", "thread":"task-a",
+            "send_to_codex":false, "locked":true
+        }))
+        .unwrap();
+        assert_eq!(draft.provider, "codex");
+        assert!(!draft.send_to_agent);
+        assert!(draft.locked);
+        assert_eq!(draft.key, "original-key");
+    }
     fn config() -> Config {
         Config {
             team: "test".into(),

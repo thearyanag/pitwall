@@ -155,6 +155,29 @@ def main():
             "--version",
             env={**env, "VERCEL_TELEMETRY_DISABLED": "1"},
         )
+        # Exercise production dependencies under the archive's actual Node/CPU,
+        # without requiring any installed agent or using a live account.
+        run(
+            str(node_root / "bin/node"),
+            "--input-type=module",
+            "-e",
+            "await import('@agentclientprotocol/sdk'); "
+            "await import('@anthropic-ai/claude-agent-sdk'); "
+            "const {catalog} = await import('./providers/registry.mjs'); "
+            "if (catalog().length < 4) throw new Error('Missing agent adapters');",
+            cwd=bundle / "board-runtime",
+            env={
+                **env,
+                "PITWALL_AGENTS": str(bundle / "no-local-agent-overrides.json"),
+            },
+        )
+        for required in (
+            "board-runtime/agent-runner.mjs",
+            "board-runtime/discover-models.mjs",
+            "worker/handoff.py",
+        ):
+            if not (bundle / required).is_file():
+                raise RuntimeError(f"Release is missing {required}")
         for path in bundle.rglob("*"):
             if path.is_symlink() and not path.resolve().is_relative_to(bundle):
                 raise RuntimeError(

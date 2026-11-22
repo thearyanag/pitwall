@@ -120,19 +120,30 @@ esac
         draft = self.home / "state/drafts/task.json"
         draft.parent.mkdir()
         draft.write_text('{"text":"keep this draft"}')
+        agents = self.home / "state/agents.json"
+        agents.write_text('[{"id":"codex","command":"/custom/codex"}]')
+        session = self.home / "state/sessions/example/session.json"
+        session.parent.mkdir(parents=True)
+        session.write_text('{"id":"native-session","last_model":"chosen-model"}')
         (first / "README.md").write_text("local worker changes")
         self.install()
         self.assertEqual((first / "README.md").read_text(), "local worker changes")
-        self.release("v0.2.1")
+        self.release("v0.3.0")
         self.install()
         self.assertNotEqual((self.home / "current").resolve(), first)
         self.assertTrue(first.exists())
         self.assertEqual(config.read_text(), 'export SPROUT_TEAM="test"\n')
         self.assertEqual(draft.read_text(), '{"text":"keep this draft"}')
+        self.assertEqual(
+            agents.read_text(), '[{"id":"codex","command":"/custom/codex"}]'
+        )
+        self.assertEqual(
+            session.read_text(), '{"id":"native-session","last_model":"chosen-model"}'
+        )
         version = subprocess.check_output(
             [str(self.bin / "pitwall"), "--version"], env=self.env, text=True
         )
-        self.assertEqual(version.strip(), "Pitwall 0.2.1")
+        self.assertEqual(version.strip(), "Pitwall 0.3.0")
 
     def test_checksum_failure_keeps_current_release(self):
         self.release("v0.2.0")
