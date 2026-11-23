@@ -99,7 +99,7 @@ export async function open(
       "initialize",
       {
         protocolVersion: PROTOCOL_VERSION,
-        clientInfo: { name: "pitwall", version: "0.3.0" },
+        clientInfo: { name: "pitwall", version: "0.4.0" },
         // Agents execute their own tools. Do not advertise unimplemented fs/terminal callbacks.
         clientCapabilities: {},
       },

@@ -22,12 +22,12 @@ right. See the work and take the next step from one screen.
 - **Revise in place:** send feedback in the same conversation; the next run uses the original request and relevant prior discussion.
 - **Choose when the agent runs:** send a request to your agent or leave a comment without starting work.
 - **Pick up where you left off:** separate drafts survive switching tasks and restarting the app.
-- **Check local changes:** code-editing runs use an isolated source copy and must pass independent checks before their changes are applied locally.
+- **Choose the project:** open a local folder; agents edit that project directly. Pitwall itself is never the default workspace.
 
 Pitwall supports **Codex, Claude Code, Grok Build, and Antigravity + Vercel Board**, with one connected Board per
 app instance and one local worker processing one task at a time. The worker's
-editing scope is this project's Rust source and README. Questions and writing
-requests can finish with an answer and no file changes.
+working directory is the folder explicitly selected for each conversation. Questions and
+writing requests can finish with an answer and no file changes.
 
 The terminal interface and worker run on your machine; Vercel Board stores the
 task and conversation data. Pitwall runs inside Rex or a compatible terminal.
@@ -53,7 +53,7 @@ Report what happened and what the user can do next.
 | Feedback submitted | Feedback queued for the agent. |
 | Comment submitted | Comment posted. Agent was not started. |
 | Answer-only completion | Response complete. No files changed. |
-| Verified code changes | Changes applied locally. Checks passed. |
+| File changes | Describe the files changed and checks actually run. |
 
 Use completion language that matches the result. A completed run is not
 necessarily a deployed release, and checks should only be mentioned when they
@@ -79,7 +79,8 @@ Permission requests appear in a local dialog with the agent’s choices; Esc den
 See [agent setup and adapter architecture](docs/agents.md) for configuration,
 capability limits, session continuation, and adding another ACP agent.
 
-Multi-agent conversations and model selection are included in **v0.3.0**.
+**v0.4.0** adds explicit project folders and native agent configuration to
+multi-agent conversations and model selection.
 Run the installer below to install or upgrade; restart existing UI and worker tabs afterward.
 
 ## Install with one command (macOS)
@@ -109,14 +110,13 @@ Settings live in `~/.local/share/pitwall/config.env`; drafts, images and run
 history live in `~/.local/share/pitwall/state/`. Set `SPROUT_TEAM` in that trusted
 shell config file to avoid passing `--team` each time. To run the worker, install
 Python 3.11+ and a signed-in supported agent CLI, then run `pitwall worker` (or prefix it
-with `SPROUT_TEAM=your-team`). Answer-only tasks do not need Rust. Tasks that edit
-Pitwall's Rust source still require Rust 1.88+ and its dependencies cached with
-`cargo fetch --locked --manifest-path ~/.local/share/pitwall/current/Cargo.toml`.
+with `SPROUT_TEAM=your-team`). Install the build tools required by the project you open.
+The worker follows that project’s instructions and asks the agent to run relevant checks.
 
 Run the installer again to update. It switches the `current` version atomically
 and retains settings, drafts, and old release directories, including local worker
 changes in them. Restart the UI and any workers afterward. Reinstalling the same
-release preserves that release's local source changes. `PITWALL_VERSION=v0.3.0`
+release preserves that release's local source changes. `PITWALL_VERSION=v0.4.0`
 can pin a tag; `PITWALL_INSTALL_DIR` and `PITWALL_BIN_DIR` select absolute install
 paths. Put these variables on the `sh` side of the pipe when overriding them.
 
@@ -175,6 +175,30 @@ are handled by the SDK, not copied into Pitwall. To refresh an expired login:
 ./board-runtime/node_modules/.bin/vercel login
 ```
 
+## Open a project
+
+Click **Open project** in the composer or press **Ctrl+L**. Browse to a folder
+and click **Open folder**, or paste its absolute path and press Enter. Opening a
+folder starts a new task draft for that project. There is no default project;
+Send stays disabled until you choose one. The composer shows its path.
+
+Each task keeps its project when you switch agents or models or send feedback.
+Opening another folder starts a separate task; it does not redirect an existing
+conversation. Project paths stay in the local registry; Board stores an opaque
+project ID. If a directory is moved, replaced, or unavailable, open it again and
+start a new task. Older projectless tasks remain readable and accept comments,
+but cannot start agents.
+
+Agents edit files **directly in the selected folder**. Changes can remain after
+an interrupted or failed run; use your project's version control to review them.
+Pitwall does not copy changes back or run a fixed Rust validation pipeline.
+Pitwall launches the selected agent in that folder and delegates configuration,
+trust and execution permissions to the native runtime. Approval requests appear
+in Pitwall. It does not add another sandbox or force full access/network access.
+The selected folder is a work target, not a universal filesystem barrier: actual
+access depends on your agent's native settings. See
+[execution limits](docs/agents.md#session-and-execution-limits).
+
 ## Composer and clickable controls
 
 The conversation has an always-visible composer. Click it and type your reply.
@@ -188,7 +212,7 @@ queued messages retain the selection they were submitted with.
 
 **+ New task** uses the same composer to create a task in the selected channel.
 Selecting a task switches back to its reply draft. Drafts are saved separately
-per channel/conversation, including images and send mode, and survive restarts.
+per project/channel or conversation, including images and send mode, and survive restarts.
 Esc leaves the editor without deleting the draft. The editor supports selection,
 word wrapping and undo/redo (**Ctrl+Z**, **Ctrl+Shift+Z**); these use
 `ratatui-textarea`. Existing drafts are migrated on read; older drafts default to Codex.
@@ -225,6 +249,7 @@ Inter font license. No runtime SVG or font dependency is added.
 
 | Key | Action |
 | --- | --- |
+| Ctrl+L | Open a project folder for a new task |
 | n | Compose a task in the selected channel |
 | c | Focus the reply composer |
 | Tab / Shift-Tab | Cycle columns and composer focus |
@@ -271,20 +296,21 @@ and disables external sync for the task. Demo mode cannot create real tasks.
 
 1. Start `worker/Start Codex Queue.command` in its own terminal tab. It stays
    running until you press Ctrl+C there. The header shows Worker: waiting/working.
-2. In Pitwall, select a live channel and click **+ New task** (or press **n**).
+2. In Pitwall, select a live channel and **Open project** (**Ctrl+L**). For another
+   task in that project, click **+ New task** (or press **n**).
 3. Type the task: first line is the title, Enter adds details. Left/Right,
    Home/End, Backspace/Delete and multiline paste work in the composer.
 4. Click **Create task** or press **Cmd+Enter** to submit. The task is selected immediately. The worker
    picks it up within a few seconds, and progress appears in the conversation.
-5. After completion, source changes and the verified executable are published
-   locally. Restart Pitwall to use UI changes; documentation changes need no restart.
+5. Review the result and changes in your selected folder. The agent reports
+   the checks it actually ran; a completed task does not deploy or publish code.
 
 The worker processes one task at a time, across channels, and takes only your
 Pitwall-created tasks assigned to codex-worker. It uses Board’s built-in wait API
 while idle, waking for ready-task events or a known lease expiry. It doesn't consume other people's
-or unrelated tasks. It uses an isolated source copy, validates the result, and
-refuses to overwrite your project if you edited it during the run. Its edit scope
-is Rust source under src/ and README.md; it never deploys or pushes changes.
+or unrelated tasks, and ignores tasks without a locally registered project.
+The agent follows the selected project’s instructions. It is instructed to preserve
+unrelated edits and not commit, push, deploy or contact external services unless requested.
 
 **Stopping:** Ctrl+C in the queue worker tab stops waiting and cancels any active
 run. Board releases the claim, so a later worker can pick it up. Closing Pitwall
@@ -299,7 +325,7 @@ Ctrl+C can quit even during submission; n on the next launch recovers it.
 
 ### Example: a queued task
 
-Keep the **Agent Queue** tab running. In Pitwall, select a live channel, press **n**,
+Keep the **Agent Queue** tab running. In Pitwall, open a project with a README, select a live channel, press **n**,
 and type: “Improve README.md by adding a short explanation of how to refresh the
 task list. Change README.md only.” Press **Ctrl+S**, then watch the task become
 claimed and completed (press **r** to refresh the list). Inspect the selected
@@ -317,12 +343,12 @@ answer remain in the original conversation.
 
 The worker processes requests in order. Feedback sent while it is working is
 queued for another run after the current run; it does not interrupt the running
-model. A verified native session is resumed when supported, with the new
+model. A successfully completed native session is resumed when supported, with the new
 request and any shared history it missed. Switching agents preserves the Board
 conversation and reattaches reference images. Otherwise the run receives the original request, bounded
-Board history, and relevant images. Both paths use current source. Questions can
-finish with an answer and no file changes. Code changes still go through the
-independent checks before being published locally.
+Board history, and relevant images. Both paths use the same selected project. Questions can
+finish with an answer and no file changes. The agent runs the checks appropriate
+to that project; Pitwall does not independently certify its result.
 
 Completed Board tasks cannot be reopened, so Pitwall creates an internal follow-up
 job in the `sprout-runs` channel and displays its status on the original task.
@@ -394,7 +420,8 @@ or download failures stop the task rather than silently dropping screenshots. Ea
 - `board-runtime/queue.mjs`: scoped task admission and official Board wait API.
 - `worker/handoff.py`: bounded, attributed history and per-agent image/context coverage.
 - `worker/listener.py`: local process supervisor, heartbeat and shutdown.
-- `worker/run_codex.py`: provider-neutral source snapshots, verification and local publication (legacy filename).
+- `worker/run_codex.py`: provider-neutral runs in the selected project (legacy filename).
+- `board-runtime/projects.mjs`: explicit local project registration and identity checks.
 - `board-runtime/adapter.mjs`: shared SDK boundary for UI reads/writes, queue discovery and run preparation.
 - `board-runtime/adapter.test.mjs`: integration checks against Board's in-memory backend.
 - `src/bin/reader.rs`: the original educational document reader; run `./reader`.
@@ -422,10 +449,8 @@ Use Node 22.22.3 or newer for the local-backend integration tests; older Node
 The SDK and CLI versions are pinned in `board-runtime/package-lock.json`.
 
 After rebuilding, run `cargo run --locked -- --team YOUR_TEAM` or copy the newly
-built binaries beside `board-runtime/`. Worker verification uses the normal
-Cargo cache (`CARGO_HOME`) and builds offline. Build once before running the
-worker so its dependencies are cached. Per-run build output defaults to
-`worker/cache/`; `SPROUT_WORK_DIR` can move that cache elsewhere.
+built binaries beside `board-runtime/`. Agents use the selected project’s build
+tools, project configuration and native permission settings.
 
 References: https://github.com/vercel/board and https://vercel.com/docs/board
 

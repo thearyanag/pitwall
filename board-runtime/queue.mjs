@@ -1,3 +1,4 @@
+import { PROJECT_LABEL, knownProject } from "./projects.mjs";
 // Admission stays Pitwall-specific; Board's wait() owns the idle network wait.
 // claim --ready also accepts unassigned tasks and requires a channel/subtree,
 // so it cannot replace this exact-assignment, board-wide admission rule.
@@ -26,7 +27,8 @@ export async function scanQueue(team, identity) {
         task?.owner !== me.principal ||
         task?.for !== actor ||
         m.labels?.project !== "sprout" ||
-        m.labels?.source !== "sprout-ui"
+        m.labels?.source !== "sprout-ui" ||
+        !knownProject(m.labels?.[PROJECT_LABEL])
       )
         continue;
       const until =

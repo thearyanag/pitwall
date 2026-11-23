@@ -1,10 +1,11 @@
+import { labels as projectLabels } from "./project-test-fixture.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { board } from "@vercel/board";
 import { local } from "@vercel/board/backend-local";
 import { scanQueue, waitForTask } from "./queue.mjs";
 
-const labels = { project: "sprout", source: "sprout-ui" };
+const labels = { project: "sprout", source: "sprout-ui", ...projectLabels };
 async function fixture(fn) {
   const backend = local({ memory: true });
   const team = board({ backend });

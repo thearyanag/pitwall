@@ -1,9 +1,13 @@
+import {
+  project as testProject,
+  labels as projectLabels,
+} from "./project-test-fixture.mjs";
 import { scanQueue } from "./queue.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { board } from "@vercel/board";
 import { local } from "@vercel/board/backend-local";
-import { execute } from "./adapter.mjs";
+import { execute as executeRaw } from "./adapter.mjs";
 import { prepareRun, RUN_CHANNEL, RUN_LABEL } from "./feedback.mjs";
 
 async function fixture(fn) {
@@ -19,7 +23,7 @@ async function original(team) {
   return (
     await team.tasks.create("general", {
       text: "Original Pitwall task",
-      labels: { project: "sprout", source: "sprout-ui" },
+      labels: { project: "sprout", source: "sprout-ui", ...projectLabels },
     })
   ).task;
 }
@@ -430,3 +434,16 @@ test("run preparation rejects a labeled non-task and reads an original task once
     assert.equal(context.conversation, task.id);
     assert.equal(reads, 1);
   }));
+
+function execute(team, req, imageRoot) {
+  return executeRaw(
+    team,
+    {
+      ...(req.op === "create" && !("project" in req)
+        ? { project: testProject.id }
+        : {}),
+      ...req,
+    },
+    imageRoot,
+  );
+}

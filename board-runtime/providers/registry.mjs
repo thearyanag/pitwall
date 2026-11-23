@@ -133,6 +133,9 @@ export function instanceKey(instance) {
   return createHash("sha256")
     .update(
       JSON.stringify({
+        // Never resume a thread created with Pitwall's former external sandbox
+        // or suppressed project settings. Board history bootstraps a fresh one.
+        execution: "native-project-v1",
         driver: instance.driver,
         command: instance.path || instance.command,
         args: instance.args,

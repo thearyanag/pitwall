@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 pub struct FilePicker {
     pub directory: PathBuf,
+    pub directories_only: bool,
     pub entries: Vec<PathBuf>,
     pub selected: usize,
     pub input: String,
@@ -13,11 +14,18 @@ impl FilePicker {
     pub fn new(directory: PathBuf) -> Self {
         let mut picker = Self {
             directory,
+            directories_only: false,
             entries: vec![],
             selected: 0,
             input: String::new(),
             error: None,
         };
+        picker.reload();
+        picker
+    }
+    pub fn folder(directory: PathBuf) -> Self {
+        let mut picker = Self::new(directory);
+        picker.directories_only = true;
         picker.reload();
         picker
     }
@@ -32,12 +40,13 @@ impl FilePicker {
                     .map(|e| e.path())
                     .filter(|p| {
                         p.is_dir()
-                            || p.extension().is_some_and(|e| {
-                                matches!(
-                                    e.to_string_lossy().to_ascii_lowercase().as_str(),
-                                    "png" | "jpg" | "jpeg"
-                                )
-                            })
+                            || (!self.directories_only
+                                && p.extension().is_some_and(|e| {
+                                    matches!(
+                                        e.to_string_lossy().to_ascii_lowercase().as_str(),
+                                        "png" | "jpg" | "jpeg"
+                                    )
+                                }))
                     })
                     .collect();
                 self.entries.sort_by_key(|p| {
@@ -79,7 +88,11 @@ impl FilePicker {
     }
     pub fn accept(&mut self) -> Option<PathBuf> {
         if self.input.trim().is_empty() {
-            return self.choose(self.selected);
+            return if self.directories_only {
+                self.directory.canonicalize().ok()
+            } else {
+                self.choose(self.selected)
+            };
         }
         let text = self.input.trim().trim_matches(['\'', '"']);
         let path = if let Some(tail) = text.strip_prefix("~/") {
@@ -95,7 +108,15 @@ impl FilePicker {
         } else {
             self.directory.join(path)
         };
-        self.open(path)
+        if self.directories_only {
+            if path.is_dir() {
+                return path.canonicalize().ok();
+            }
+            self.error = Some("Choose an existing project folder.".into());
+            None
+        } else {
+            self.open(path)
+        }
     }
     pub fn key(&mut self, key: KeyEvent) -> Option<PathBuf> {
         match key.code {
@@ -104,7 +125,15 @@ impl FilePicker {
                 self.selected = (self.selected + 1).min(self.entries.len().saturating_sub(1))
             }
             KeyCode::Left if self.input.is_empty() => self.up(),
-            KeyCode::Enter => return self.accept(),
+            KeyCode::Enter => {
+                if self.directories_only
+                    && self.input.is_empty()
+                    && !key.modifiers.contains(KeyModifiers::CONTROL)
+                {
+                    return self.choose(self.selected);
+                }
+                return self.accept();
+            }
             KeyCode::Backspace => {
                 self.input.pop();
             }
@@ -130,6 +159,20 @@ impl FilePicker {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn directory_picker_selects_only_an_explicit_folder() {
+        let root = std::env::temp_dir().join(format!("pitwall-folder-{}", std::process::id()));
+        let project = root.join("project with spaces");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::write(root.join("file.png"), b"not a folder").unwrap();
+        let mut picker = FilePicker::folder(root.clone());
+        assert_eq!(picker.entries, vec![project.clone()]);
+        assert!(picker.choose(0).is_none());
+        assert_eq!(picker.accept(), Some(project.canonicalize().unwrap()));
+        picker.input = root.join("file.png").to_string_lossy().into();
+        assert!(picker.accept().is_none());
+        std::fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn browse_and_choose_a_unicode_path_with_spaces() {
         let dir = std::env::temp_dir().join(format!("sprout-picker-{}", std::process::id()));

@@ -8,8 +8,9 @@ The worker is a foreground process, not an installed startup service.
 The queue requires your Vercel team in `SPROUT_TEAM`; its default board is General. `SPROUT_TEAM` and
 `SPROUT_BOARD` select another target, which must match Pitwall's target. It works
 across channels but takes only the logged-in user's tasks assigned to codex-worker
-with both `project=sprout` and `source=sprout-ui`. A workspace lock prevents two
-local listeners from editing this project at the same time.
+with both `project=sprout` and `source=sprout-ui` and a locally registered
+`pitwall.project` ID. A local instance lock prevents duplicate listeners. The
+worker processes one job at a time across its registered projects.
 
 Idle waiting uses the official Board SDK's `wait()` API. The listener checks for
 eligible work once, then holds a wait for matching ready-task events rather than
@@ -26,29 +27,30 @@ No foreign owners are opted in. The short admission check stays in
 `board-runtime/queue.mjs`; all idle network waiting is delegated to Board.
 
 The official Board CLI claims the selected task, renews its lease and records its
-final status. The provider-neutral coordinator starts the selected adapter in a
-source snapshot under `worker/sessions/<key>/workspace`. Codex uses its native
-workspace-write sandbox with task network access disabled. Other agents use their
-native permission enforcement, with requests routed to Pitwall; a source snapshot
-is not an OS sandbox. Pitwall does not enable bypass/always-approve modes. Its progress messages
-are forwarded by the wrapper; credentials and raw tool outputs are not forwarded.
+final status. The provider-neutral coordinator resolves the task's local project
+ID, verifies its directory identity, and starts the agent directly in that folder.
+There is no default project, source snapshot or copy-back step. Existing tasks
+without a project remain commentable but cannot run; open a folder and create a
+new task. Replies and agent/model switches keep the original project.
 
-The permitted result is Rust source under `src/` and `README.md`. Manifests,
-lockfiles, lessons, worker code and external services are outside its scope.
-The wrapper independently checks formatting, tests, lint and build. It then
-checks the live source against the original snapshot before publishing. If you
-edited the source during execution, the task fails rather than overwriting your
-work; the proposed result stays in the run workspace. Successful runs update
-the source and `sprout` executable. Restart Pitwall to load UI changes.
+Pitwall passes the selected folder to the installed agent and delegates project
+configuration, trust and permissions to that runtime. It adds no outer sandbox,
+network grant or bypass mode. Approval requests still appear in Pitwall, but
+native settings determine which actions prompt and which paths are accessible.
+Folder selection does not guarantee filesystem isolation. See
+[execution limits](../docs/agents.md#session-and-execution-limits).
 
-Each agent gets up to 20 minutes per task. A failed task stays failed for review and is
-not automatically retried. SIGINT/SIGTERM stops active child processes; Board's
-runner releases the claim on interruption. A lost lease also stops the run.
-Logs, final summary and checks live in `worker/runs/`. Current proposed source is
-in the session workspace; the next attempt preserves it in that run’s
-`previous-workspace/` before refreshing source. Successful verified sessions can
-resume; failed or interrupted attempts start fresh with Board context. These
-paths live under `SPROUT_STATE_DIR` for installed builds.
+The agent follows the project's instructions and is asked to run relevant checks.
+Pitwall does not impose Cargo checks or independently validate results. Changes
+happen directly and remain after a failure or cancellation; review them with the
+project's version control. No executable is automatically rebuilt or published.
+
+Each agent gets up to 20 minutes per task. A failed task stays failed for review
+and is not automatically retried. SIGINT/SIGTERM stops active child processes;
+Board's runner releases the claim on interruption. A lost lease also stops the
+run. Logs, context receipts and final summaries live in `worker/runs/`. Completed
+sessions can resume; uncertain failed/interrupted attempts start fresh with Board
+context. These paths live under `SPROUT_STATE_DIR` for installed builds.
 `status.json` is a local heartbeat used by Pitwall's header; stale heartbeats are
 shown as offline.
 
@@ -81,9 +83,8 @@ job, while later worker results are available as context. The original task and
 the exact requested feedback are always included separately from the bounded
 history. Progress and final results route back to the original conversation.
 
-Answer-only runs finish successfully without changing files or claiming tests
-ran. Runs that change files still execute independent checks and publish only
-when the original source has not changed.
+Answer-only runs can finish without changing files or claiming tests ran.
+For code changes, the agent reports the project checks it actually ran.
 
 **Comment only** posts a reply without creating a worker job. Both the UI and
 worker use `board-runtime/adapter.mjs`; there is one context/image preparation
@@ -104,21 +105,21 @@ A reply may select a different installed agent without changing the root task. E
 actor `codex-worker` and launcher/script filenames remain compatibility identifiers;
 they no longer choose the execution provider. The queue still runs one job at a time.
 
-Native session state is scoped by team, board, conversation and local instance
-configuration. Changing executable, account environment, arguments or model creates
-a separate session workspace. Resume errors fail explicitly, rather than silently
+Native session state is scoped by team, board, project, conversation and local
+instance configuration. Changing executable, account environment or arguments
+creates a separate session. Model changes stay within the same native session. Resume errors fail explicitly, rather than silently
 starting a replacement conversation. Agents that advertise no resume get a fresh
 session with bounded Board context. Processes are released after each job; this
 version does not keep idle agents warm.
 
-Only a successfully verified result with its final Board reply posted becomes
+Only a successful result with its final Board reply posted becomes
 resumable. `handoff.py` selects the unseen Board history for that native session;
 `session.json` records content fingerprints and image IDs actually covered.
 Fresh agents receive reference images and bounded history. Returning agents
 receive the intervening context and reference images again; same-agent
 continuations without missed context send only new images. Comment-only replies
 are not separate native turns, but become context for the next requested run.
-`handoff.json` records the input selection; the native completion and verified
+`handoff.json` records the input selection; the native completion and completed
 session ledger confirm whether delivery succeeded.
 
 Permission requests and choices stay in local `approvals/` files, scoped to the
@@ -139,6 +140,6 @@ means reset to the agent default). A model change does not change `provider_key`
 or the native session directory. The runtime confirms its model through native
 RPC/SDK metadata, and worker replies are labeled with that model. Session state
 keeps `last_model` and `default_model`; changes reattach the reference images.
-Preflight rejection restores the prior verified session, while uncertain failures
+Preflight rejection restores the prior completed session, while uncertain failures
 after prompting keep the existing fresh-context recovery behavior.
 Model discovery is an explicit picker operation, separate from Board and the queue.

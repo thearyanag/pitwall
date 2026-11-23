@@ -85,6 +85,12 @@ pub struct Conversation {
     pub reply_count: usize,
 }
 #[derive(Clone, Debug, Deserialize)]
+pub struct Project {
+    pub id: String,
+    pub name: String,
+    pub path: PathBuf,
+}
+#[derive(Clone, Debug, Deserialize)]
 pub struct AgentInfo {
     pub id: String,
     pub label: String,
@@ -105,6 +111,8 @@ pub struct ModelCatalog {
 #[derive(Deserialize)]
 pub struct InitData {
     #[serde(default)]
+    pub projects: Vec<Project>,
+    #[serde(default)]
     pub providers: Vec<AgentInfo>,
     pub identity: String,
     pub channels: Vec<Channel>,
@@ -123,8 +131,12 @@ pub struct CreatedData {
 #[derive(Clone, Debug)]
 pub enum Request {
     Init,
+    OpenProject {
+        path: PathBuf,
+    },
     Models {
         provider: String,
+        project: Option<String>,
     },
     List {
         channel: String,
@@ -136,6 +148,7 @@ pub enum Request {
         id: String,
     },
     Create {
+        project: Option<String>,
         provider: String,
         model: Option<String>,
         channel: String,
@@ -144,6 +157,7 @@ pub enum Request {
         attachments: Vec<crate::images::LocalImage>,
     },
     Reply {
+        project: Option<String>,
         provider: String,
         model: Option<String>,
         run_worker: bool,
@@ -183,7 +197,10 @@ fn fetch(
 ) -> Result<Value, String> {
     let mut input = match req {
         Request::Init => json!({"op":"init"}),
-        Request::Models { provider } => json!({"op":"models", "provider":provider}),
+        Request::OpenProject { path } => json!({"path":path}),
+        Request::Models { provider, project } => {
+            json!({"op":"models", "provider":provider, "project":project})
+        }
         Request::List {
             channel,
             mode,
@@ -192,6 +209,7 @@ fn fetch(
         } => json!({"op":"list","channel":channel,"mode":mode,"cursor":cursor}),
         Request::Thread { id } => json!({"op":"thread","id":id}),
         Request::Create {
+            project,
             provider,
             model,
             channel,
@@ -199,10 +217,11 @@ fn fetch(
             key,
             attachments,
         } => {
-            json!({"op":"create","provider":provider,"model":model,"channel":channel,"text":text,"key":key,"attachments":attachments})
+            json!({"op":"create","project":project,"provider":provider,"model":model,"channel":channel,"text":text,"key":key,"attachments":attachments})
         }
         Request::Image { id, thread } => json!({"op":"image","id":id,"thread":thread}),
         Request::Reply {
+            project,
             provider,
             model,
             run_worker,
@@ -211,17 +230,17 @@ fn fetch(
             key,
             attachments,
         } => {
-            json!({"op":"reply","provider":provider,"model":model,"thread":thread,"text":text,"key":key,"attachments":attachments,"run_worker":run_worker})
+            json!({"op":"reply","project":project,"provider":provider,"model":model,"thread":thread,"text":text,"key":key,"attachments":attachments,"run_worker":run_worker})
         }
     };
     input["team"] = json!(config.team);
     input["board"] = json!(config.board);
     input["demo"] = json!(config.demo);
     let mut child = Command::new(&config.node)
-        .arg(if matches!(req, Request::Models { .. }) {
-            config.adapter.with_file_name("discover-models.mjs")
-        } else {
-            config.adapter.clone()
+        .arg(match req {
+            Request::Models { .. } => config.adapter.with_file_name("discover-models.mjs"),
+            Request::OpenProject { .. } => config.adapter.with_file_name("open-project.mjs"),
+            _ => config.adapter.clone(),
         })
         .arg("-")
         .env("SPROUT_STATE_DIR", config.state_dir())

@@ -346,7 +346,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         .composer
         .as_ref()
         .is_some_and(|e| !e.draft.images.is_empty());
-    let composer_height = (if has_images { 23 } else { 15 }).min(cols[2].height.saturating_sub(4));
+    let composer_height = (if has_images { 26 } else { 18 }).min(cols[2].height.saturating_sub(4));
     let right =
         Layout::vertical([Constraint::Min(5), Constraint::Length(composer_height)]).split(cols[2]);
     let title = if app.new_task {
@@ -366,6 +366,21 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 Style::default().fg(p.text),
             ),
             Line::raw(""),
+            Line::raw(
+                app.composer
+                    .as_ref()
+                    .and_then(|e| e.draft.project.as_ref())
+                    .and_then(|id| app.projects.iter().find(|p| &p.id == id))
+                    .map(|p| {
+                        format!(
+                            "Working folder: {} · direct edits · native agent permissions",
+                            p.path.display()
+                        )
+                    })
+                    .unwrap_or_else(|| {
+                        "Open a project folder before sending work to an agent.".into()
+                    }),
+            ),
             Line::raw("Describe the task below. Paste or attach screenshots for context."),
         ]
     } else {
@@ -495,16 +510,17 @@ fn draw_composer(f: &mut Frame, app: &mut App, area: Rect, p: &Palette, worker: 
     let block = panel(title.into(), app.focus == Focus::Composer, p);
     let inner = block.inner(area);
     f.render_widget(block, area);
-    let with_images = !editor.draft.images.is_empty();
+    let project = app
+        .projects
+        .iter()
+        .find(|p| Some(&p.id) == editor.draft.project.as_ref());
+    let with_images = !editor.draft.images.is_empty() && inner.height >= 18;
     let parts = Layout::vertical([
+        Constraint::Length(3),
         Constraint::Length(3),
         Constraint::Min(3),
         Constraint::Length(if with_images {
-            if area.height >= 22 {
-                8
-            } else {
-                6
-            }
+            inner.height.saturating_sub(14).min(8)
         } else {
             0
         }),
@@ -513,8 +529,19 @@ fn draw_composer(f: &mut Frame, app: &mut App, area: Rect, p: &Palette, worker: 
     ])
     .split(inner);
     let editable = !editor.draft.locked && !editor.submitting;
+    button(
+        f,
+        parts[0],
+        &project
+            .map(|p| format!("Project: {} ›", p.name))
+            .unwrap_or_else(|| "Open project…".into()),
+        p,
+        &mut app.ui.hits,
+        editable.then_some(Action::Project),
+        ButtonTone::Normal,
+    );
     let controls = Layout::horizontal([Constraint::Percentage(45), Constraint::Percentage(55)])
-        .split(parts[0]);
+        .split(parts[1]);
     button(
         f,
         controls[0],
@@ -536,7 +563,7 @@ fn draw_composer(f: &mut Frame, app: &mut App, area: Rect, p: &Palette, worker: 
         (editable && installed).then_some(Action::Models),
         ButtonTone::Normal,
     );
-    app.ui.editor = parts[1];
+    app.ui.editor = parts[2];
     editor
         .textarea
         .set_style(Style::default().fg(p.text).bg(p.raised));
@@ -559,19 +586,19 @@ fn draw_composer(f: &mut Frame, app: &mut App, area: Rect, p: &Palette, worker: 
     editor
         .textarea
         .set_placeholder_style(Style::default().fg(p.muted));
-    f.render_widget(&editor.textarea, parts[1]);
+    f.render_widget(&editor.textarea, parts[2]);
     if with_images {
-        let fits = (parts[2].width / 17).max(1) as usize;
+        let fits = (parts[3].width / 17).max(1) as usize;
         let capacity = if editor.draft.images.len() > fits {
-            (parts[2].width.saturating_sub(10) / 17).max(1) as usize
+            (parts[3].width.saturating_sub(10) / 17).max(1) as usize
         } else {
             fits
         };
         let start = editor.image_index / capacity * capacity;
         for index in start..(start + capacity).min(editor.draft.images.len()) {
             let image = editor.draft.images[index].clone();
-            let x = parts[2].x + (index - start) as u16 * 17;
-            let tile = Rect::new(x, parts[2].y, 16, parts[2].height);
+            let x = parts[3].x + (index - start) as u16 * 17;
+            let tile = Rect::new(x, parts[3].y, 16, parts[3].height);
             let block = Block::default()
                 .title(format!(" {} ", index + 1))
                 .borders(Borders::ALL)
@@ -608,7 +635,7 @@ fn draw_composer(f: &mut Frame, app: &mut App, area: Rect, p: &Palette, worker: 
             );
         }
         if editor.draft.images.len() > capacity {
-            let more = Rect::new(parts[2].right().saturating_sub(9), parts[2].y, 9, 3);
+            let more = Rect::new(parts[3].right().saturating_sub(9), parts[3].y, 9, 3);
             button(
                 f,
                 more,
@@ -620,7 +647,7 @@ fn draw_composer(f: &mut Frame, app: &mut App, area: Rect, p: &Palette, worker: 
             );
         }
     }
-    let actions = parts[3];
+    let actions = parts[4];
     let send_width = if is_reply { 14 } else { 15 };
     button(
         f,
@@ -659,7 +686,8 @@ fn draw_composer(f: &mut Frame, app: &mut App, area: Rect, p: &Palette, worker: 
     let can_send = !editor.submitting
         && !editor.draft.text.trim().is_empty()
         && !app.config.demo
-        && (installed || (is_reply && !editor.draft.send_to_agent));
+        && (installed || (is_reply && !editor.draft.send_to_agent))
+        && (project.is_some() || (is_reply && !editor.draft.send_to_agent));
     let label = if editor.submitting {
         "Sending…"
     } else if editor.draft.locked {
@@ -685,6 +713,8 @@ fn draw_composer(f: &mut Frame, app: &mut App, area: Rect, p: &Palette, worker: 
     );
     let hint = if let Some(error) = &editor.error {
         error.clone()
+    } else if project.is_none() && (!is_reply || editor.draft.send_to_agent) {
+        "Open a project folder to start a new task · Ctrl+L".into()
     } else if !installed && (!is_reply || editor.draft.send_to_agent) {
         format!("{agent_name} is not installed · install and sign in, then Refresh")
     } else if editor.submitting {
@@ -706,7 +736,7 @@ fn draw_composer(f: &mut Frame, app: &mut App, area: Rect, p: &Palette, worker: 
             } else {
                 p.muted
             })),
-        parts[4],
+        parts[5],
     );
 }
 
@@ -721,8 +751,18 @@ fn draw_file_picker(f: &mut Frame, app: &mut App, p: &Palette) {
         height,
     );
     f.render_widget(Clear, rect);
-    let block =
-        panel(" Attach image ".into(), true, p).style(Style::default().bg(p.raised).fg(p.text));
+    let folder = app.file_picker.as_ref().unwrap().directories_only;
+    let block = panel(
+        if folder {
+            " Open project "
+        } else {
+            " Attach image "
+        }
+        .into(),
+        true,
+        p,
+    )
+    .style(Style::default().bg(p.raised).fg(p.text));
     let inner = block.inner(rect);
     f.render_widget(block, rect);
     let picker = app.file_picker.as_ref().unwrap();
@@ -755,32 +795,38 @@ fn draw_file_picker(f: &mut Frame, app: &mut App, p: &Palette) {
         );
         app.ui.hits.push((row, Action::Pick(n)));
     }
-    let hint = picker
-        .error
-        .as_deref()
-        .unwrap_or("Click a folder or image · ↑↓ select · Enter opens · Type or paste a path");
+    let hint = picker.error.as_deref().unwrap_or(if folder {
+        "Browse folders · Open folder selects this directory · Ctrl+Enter selects"
+    } else {
+        "Click a folder or image · ↑↓ select · Enter opens · Type or paste a path"
+    });
     f.render_widget(
         Paragraph::new(hint).style(Style::default().fg(p.muted)),
         Rect::new(inner.x, inner.bottom() - 5, inner.width, 1),
     );
+    let accept_label = if folder {
+        "Open folder"
+    } else {
+        "Open / attach"
+    };
     for (x, label, action) in [
         (inner.x, "Up", Action::PickerUp),
         (inner.x + 12, "Cancel", Action::PickerClose),
-        (inner.right() - 16, "Open / attach", Action::PickerAccept),
+        (inner.right() - 16, accept_label, Action::PickerAccept),
     ] {
         button(
             f,
             Rect::new(
                 x,
                 inner.bottom() - 3,
-                if label == "Open / attach" { 16 } else { 10 },
+                if label == accept_label { 16 } else { 10 },
                 3,
             ),
             label,
             p,
             &mut app.ui.hits,
             Some(action),
-            if label == "Open / attach" {
+            if label == accept_label {
                 ButtonTone::Primary
             } else {
                 ButtonTone::Normal
@@ -1002,7 +1048,7 @@ fn draw_help(f: &mut Frame, p: &Palette) {
         "",
         " n / c / p               New task / reply to worker / images",
         " Cmd+Enter sends · Enter adds a line · Comment only skips the agent.",
-        " Ctrl+G / Ctrl+O         Choose agent / model for your next message",
+        " Ctrl+L / Ctrl+G / Ctrl+O Project / agent / model",
     ];
     f.render_widget(Clear, overlay);
     f.render_widget(

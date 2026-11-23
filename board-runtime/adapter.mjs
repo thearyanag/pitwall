@@ -1,3 +1,4 @@
+import { PROJECT_LABEL, listProjects, resolveProject } from "./projects.mjs";
 import { MODEL_LABEL, modelLabel } from "./providers/models.mjs";
 import { catalog, provider, PROVIDER_LABEL } from "./providers/registry.mjs";
 import { waitForTask } from "./queue.mjs";
@@ -104,6 +105,7 @@ export async function execute(team, req, imageRoot) {
       throw new Error("Write a task between 1 and 8,000 characters.");
     if (!req.channel || !req.key)
       throw new Error("Task channel and submission key are required.");
+    const project = resolveProject(req.project);
     const agent = provider(req.provider);
     const model = modelLabel(req.model);
     const attachments = await uploadImages(team, req, imageRoot);
@@ -116,6 +118,7 @@ export async function execute(team, req, imageRoot) {
       labels: {
         project: "sprout",
         source: "sprout-ui",
+        [PROJECT_LABEL]: project.id,
         [PROVIDER_LABEL]: agent.id,
         [MODEL_LABEL]: model,
       },
@@ -186,6 +189,7 @@ export async function execute(team, req, imageRoot) {
     return {
       identity: clean(me.name || me.handle || me.actor),
       providers: catalog(),
+      projects: listProjects(),
       channels: channels.sort((a, b) => a.path.localeCompare(b.path)),
     };
   }
@@ -308,6 +312,7 @@ export async function demo(req) {
     return {
       identity: "Demo data · not connected",
       providers: catalog(),
+      projects: listProjects(),
       channels: channels.map((path) => ({ path })),
     };
   if (req.op === "list") return { items: all[req.channel] ?? [], next: null };

@@ -1,5 +1,6 @@
-// One claimed Board job. The Python coordinator owns snapshots/checks/publication.
-import { readFileSync, writeFileSync } from "node:fs";
+import { resolveProject } from "./projects.mjs";
+// One claimed Board job. The Python coordinator owns project context and reporting.
+import { realpathSync, readFileSync, writeFileSync } from "node:fs";
 import { openAgent } from "./providers/index.mjs";
 import { catalog, provider } from "./providers/registry.mjs";
 import { createHost } from "./providers/host.mjs";
@@ -22,6 +23,9 @@ if (process.argv[2] === "list") {
   const timeout = setTimeout(cancel, 20 * 60_000);
   try {
     const request = JSON.parse(readFileSync(0, "utf8"));
+    const project = resolveProject(request.projectId);
+    if (realpathSync(request.cwd) !== project.path)
+      throw new Error("Run workspace does not match the selected project.");
     instance = provider(request.provider);
     const host = createHost(
       { ...request, label: instance.label },

@@ -6,7 +6,8 @@ import {
 } from "@agentclientprotocol/sdk";
 import { Readable, Writable } from "node:stream";
 import { createInterface } from "node:readline";
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
+import assert from "node:assert/strict";
 const mode = process.env.PITWALL_TEST_MODE;
 if (mode === "exit") process.exit(7);
 if (mode === "codex") {
@@ -16,6 +17,10 @@ if (mode === "codex") {
     const e = JSON.parse(line),
       result = (r) => send({ id: e.id, result: r });
     if (e.method === "initialize") result({});
+    if (e.method === "config/read") {
+      assert.equal(realpathSync(e.params.cwd), realpathSync(process.cwd()));
+      result({ config: { model: process.env.PITWALL_TEST_PROJECT_MODEL || null } });
+    }
     if (e.method === "model/list")
       result({
         data: [
@@ -35,10 +40,14 @@ if (mode === "codex") {
         nextCursor: null,
       });
     if (e.method === "thread/start" || e.method === "thread/resume") {
+      assert.equal(realpathSync(e.params.cwd), realpathSync(process.cwd()));
+      for (const key of ["sandbox", "approvalPolicy", "config", "permissions"])
+        assert.equal(Object.hasOwn(e.params, key), false, `native ${key} must not be overridden`);
       model = e.params.model || model;
       result({ thread: { id: e.params.threadId || "native-thread" }, model });
     }
     if (e.method === "turn/start") {
+      assert.equal(Object.hasOwn(e.params, "sandboxPolicy"), false);
       result({ turn: { id: "turn" } });
       send({
         method: "turn/started",
@@ -110,11 +119,13 @@ if (mode === "codex") {
       },
       authMethods: [],
     }))
-    .onRequest("session/new", () => {
+    .onRequest("session/new", ({ params: p }) => {
+      assert.equal(realpathSync(p.cwd), realpathSync(process.cwd()));
       if (!authenticated) throw new Error("Authentication required");
       return { sessionId: "native-session", ...modelState() };
     })
     .onRequest("session/load", async ({ params: p, client: context }) => {
+      assert.equal(realpathSync(p.cwd), realpathSync(process.cwd()));
       await context.notify("session/update", {
         sessionId: p.sessionId,
         update: {

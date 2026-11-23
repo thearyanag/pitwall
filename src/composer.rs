@@ -28,6 +28,8 @@ pub struct Draft {
     #[serde(default = "default_provider")]
     pub provider: String,
     #[serde(default)]
+    pub project: Option<String>,
+    #[serde(default)]
     pub model: Option<String>,
     #[serde(default)]
     pub images: Vec<LocalImage>,
@@ -71,6 +73,7 @@ impl Composer {
             thread_title: String::new(),
             send_to_agent: true,
             provider: default_provider(),
+            project: None,
             model: None,
             images: vec![],
             locked: false,
@@ -231,7 +234,12 @@ impl Composer {
         let path = if self.draft.locked {
             pending
         } else {
-            draft_path(config, &self.draft.channel, self.draft.thread.as_deref())
+            draft_path_for(
+                config,
+                &self.draft.channel,
+                self.draft.thread.as_deref(),
+                self.draft.project.as_deref(),
+            )
         };
         fs::create_dir_all(path.parent().unwrap()).map_err(|e| e.to_string())?;
         let tmp = path.with_extension(format!("{}.tmp", std::process::id()));
@@ -242,11 +250,21 @@ impl Composer {
         .map_err(|e| e.to_string())?;
         fs::rename(tmp, path).map_err(|e| e.to_string())
     }
+    #[cfg(test)]
     pub fn load_for(
         config: &Config,
         channel: String,
         thread: Option<String>,
         title: String,
+    ) -> Result<Self, String> {
+        Self::load_for_project(config, channel, thread, title, None)
+    }
+    pub fn load_for_project(
+        config: &Config,
+        channel: String,
+        thread: Option<String>,
+        title: String,
+        project: Option<String>,
     ) -> Result<Self, String> {
         let pending = if thread.is_some() {
             reply_path(config)
@@ -254,7 +272,10 @@ impl Composer {
             pending_path(config)
         };
         if let Some(editor) = Self::resume_file(config, pending.clone())? {
-            if editor.draft.thread == thread && editor.draft.channel == channel {
+            if editor.draft.thread == thread
+                && editor.draft.channel == channel
+                && (thread.is_some() || editor.draft.project == project)
+            {
                 if !editor.draft.locked {
                     editor.save(config)?;
                     clear_file(pending)?;
@@ -262,24 +283,28 @@ impl Composer {
                 return Ok(editor);
             }
         }
-        if let Some(editor) =
-            Self::resume_file(config, draft_path(config, &channel, thread.as_deref()))?
-        {
+        if let Some(editor) = Self::resume_file(
+            config,
+            draft_path_for(config, &channel, thread.as_deref(), project.as_deref()),
+        )? {
             if editor.draft.channel != channel || editor.draft.thread != thread {
                 return Err("Saved draft does not match this conversation.".into());
             }
             return Ok(editor);
         }
-        Ok(match thread {
+        let mut editor = match thread {
             Some(id) => Self::reply(channel, id, title, config),
             None => Self::new(channel, config),
-        })
+        };
+        editor.draft.project = project;
+        Ok(editor)
     }
     pub fn remove_saved(&self, config: &Config) -> Result<(), String> {
-        clear_file(draft_path(
+        clear_file(draft_path_for(
             config,
             &self.draft.channel,
             self.draft.thread.as_deref(),
+            self.draft.project.as_deref(),
         ))
     }
 
@@ -297,13 +322,18 @@ impl Composer {
         Ok(Some(editor))
     }
 }
-pub fn draft_path(config: &Config, channel: &str, thread: Option<&str>) -> PathBuf {
+fn draft_path_for(
+    config: &Config,
+    channel: &str,
+    thread: Option<&str>,
+    project: Option<&str>,
+) -> PathBuf {
     let target = format!(
         "{}|{}|{}|{}",
         config.team,
         config.board,
         channel,
-        thread.unwrap_or("new")
+        thread.unwrap_or(project.unwrap_or("new"))
     );
     let hash = target.bytes().fold(0xcbf29ce484222325u64, |h, b| {
         (h ^ u64::from(b)).wrapping_mul(0x100000001b3)

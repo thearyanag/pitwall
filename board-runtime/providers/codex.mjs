@@ -120,15 +120,20 @@ export async function open(instance, options, host) {
   });
   try {
     await call("initialize", {
-      clientInfo: { name: "pitwall", version: "0.3.0" },
+      clientInfo: { name: "pitwall", version: "0.4.0" },
     });
     write({ method: "initialized" });
+    const { config: projectConfig } = await call("config/read", {
+      cwd: options.cwd,
+      includeLayers: false,
+    });
     const entries = [],
       cursors = new Set();
     let cursor;
     do {
       const page = await call("model/list", {
         limit: 100,
+        ...(projectConfig.model_provider ? { modelProvider: projectConfig.model_provider } : {}),
         ...(cursor ? { cursor } : {}),
       });
       entries.push(...page.data);
@@ -149,6 +154,7 @@ export async function open(instance, options, host) {
     );
     defaultModel =
       instance.model ??
+      projectConfig.model ??
       entries.find((m) => m.isDefault)?.model ??
       options.defaultModel ??
       null;
@@ -161,16 +167,10 @@ export async function open(instance, options, host) {
       throw new Error(
         `Codex no longer offers model ${model}. Refresh the model picker.`,
       );
-    const config = {
-      ...options.config,
-      "sandbox_workspace_write.network_access": false,
-      "sandbox_workspace_write.writable_roots": options.writableRoots,
-    };
+    // Resolve native configuration for this project. Do not replace its sandbox,
+    // approval policy, network settings or configured MCP servers.
     const params = {
       cwd: options.cwd,
-      approvalPolicy: "on-request",
-      sandbox: "workspace-write",
-      config,
       ...(model ? { model } : {}),
     };
     if (!options.discover) {

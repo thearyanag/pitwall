@@ -113,12 +113,10 @@ export async function open(instance, options, host, queryFn = query) {
         abortController: controller,
         env: { ...process.env, ...instance.env },
         ...(session.id ? { resume: session.id } : {}),
-        permissionMode: "default",
-        settingSources: [],
-        additionalDirectories: options.writableRoots,
-        mcpServers: {},
-        mcpServersDelivery: "argv",
-        strictMcpConfig: true,
+        // Match the native coding CLI: project instructions and settings load
+        // through the SDK; its permission engine decides which calls need us.
+        systemPrompt: { type: "preset", preset: "claude_code" },
+        settingSources: ["user", "project", "local"],
         includePartialMessages: true,
         stderr: (data) => process.stderr.write(data),
         canUseTool: async (name, toolInput) => {

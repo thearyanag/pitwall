@@ -1,3 +1,4 @@
+import { PROJECT_LABEL, resolveProject } from "./projects.mjs";
 import {
   MODEL_LABEL,
   modelLabel,
@@ -113,6 +114,13 @@ export async function sendFeedback(team, req, imageRoot) {
       "Select one of your Pitwall tasks to send feedback to the worker.",
     );
   const runWorker = req.run_worker !== false;
+  const project = runWorker
+    ? resolveProject(root.labels?.[PROJECT_LABEL])
+    : null;
+  if (runWorker && req.project && req.project !== project.id)
+    throw new Error(
+      "A conversation's project cannot change. Open the other folder and start a new task.",
+    );
   const existingReply = original.replies.find(
     (m) => m.labels?.[REQUEST_LABEL] === req.key,
   );
@@ -161,6 +169,7 @@ export async function sendFeedback(team, req, imageRoot) {
     labels: {
       [FEEDBACK_LABEL]: runWorker ? "request" : "comment",
       [REQUEST_LABEL]: req.key,
+      ...(project ? { [PROJECT_LABEL]: project.id } : {}),
       ...(agent
         ? { [PROVIDER_LABEL]: agent.id, [MODEL_LABEL]: modelLabel(model) }
         : {}),
@@ -182,6 +191,7 @@ export async function sendFeedback(team, req, imageRoot) {
       project: "sprout",
       source: "sprout-ui",
       kind: "followup",
+      [PROJECT_LABEL]: project.id,
       [PROVIDER_LABEL]: agent.id,
       [MODEL_LABEL]: modelLabel(model),
       [CONVERSATION_LABEL]: root.id,
@@ -260,10 +270,19 @@ export async function prepareRun(team, id) {
     request.labels[PROVIDER_LABEL] !== instance.id
   )
     throw new Error("The queued agent does not match the submitted feedback.");
+  if (
+    !task.labels?.[PROJECT_LABEL] ||
+    task.labels[PROJECT_LABEL] !== root.labels?.[PROJECT_LABEL]
+  )
+    throw new Error(
+      "This queued task has no matching project. Open a project and start a new task.",
+    );
+  const project = resolveProject(task.labels[PROJECT_LABEL]);
   const model = modelSelection(task.labels?.[MODEL_LABEL]);
   if (feedbackId && modelSelection(request.labels?.[MODEL_LABEL]) !== model)
     throw new Error("The queued model does not match the submitted feedback.");
   return {
+    project,
     model,
     provider: instance.id,
     provider_key: instanceKey(instance),

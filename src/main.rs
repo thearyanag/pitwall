@@ -45,7 +45,7 @@ fn config() -> Result<Option<Config>, String> {
             "--team" => config.team = args.next().ok_or("--team needs a slug or ID")?,
             "--board" => config.board = args.next().ok_or("--board needs a name")?,
             "--help" | "-h" => {
-                println!("Pitwall — a terminal workspace for agent work\nAll your agent work, one view.\n\nSend tasks to Codex, follow progress, and give feedback in the same conversation.\n\nUsage: sprout [--team SLUG] [--board NAME] [--demo]\n\nn: new task | Tab/arrows: navigate | r: refresh | v: tasks/threads | m: more\nt: theme | q/Ctrl-C: quit\n\nUses your existing Vercel CLI login. --demo is explicitly fictional.\nEnvironment: SPROUT_TEAM, SPROUT_BOARD, SPROUT_NODE.\nOriginal lesson reader: ./reader");
+                println!("Pitwall — a terminal workspace for agent work\nAll your agent work, one view.\n\nOpen a project, send tasks to your agent, follow progress, and give feedback in the same conversation.\n\nUsage: sprout [--team SLUG] [--board NAME] [--demo]\n\nCtrl+L: open project | n: new task | Tab/arrows: navigate | r: refresh | v: tasks/threads | m: more\nt: theme | q/Ctrl-C: quit\n\nUses your existing Vercel CLI login. --demo is explicitly fictional.\nEnvironment: SPROUT_TEAM, SPROUT_BOARD, SPROUT_NODE.\nOriginal lesson reader: ./reader");
                 return Ok(None);
             }
             _ => return Err(format!("Unknown argument {arg}; use --help")),

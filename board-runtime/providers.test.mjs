@@ -1,3 +1,5 @@
+import { registerProject } from "./projects.mjs";
+import { state as projectState } from "./project-test-fixture.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -22,7 +24,7 @@ import { once } from "node:events";
 
 const peer = new URL("./providers/fixtures/agent.mjs", import.meta.url)
   .pathname;
-const options = { cwd: tmpdir(), writableRoots: [] };
+const options = { cwd: tmpdir() };
 test(
   "ACP supports grouped catalogs, modern and legacy switches, default reset and rejection",
   { timeout: 10000 },
@@ -124,6 +126,17 @@ test("Codex discovers without a thread and changes models without changing nativ
     assert.equal(reset.resumed, true);
   } finally {
     await reset.close();
+  }
+});
+test("Codex Agent default uses the project's effective model rather than the catalog default", async () => {
+  const configured = instance("codex");
+  configured.env = { ...configured.env, PITWALL_TEST_PROJECT_MODEL: "test-b" };
+  const session = await codex(configured, { ...options, resumeId: "native-thread", model: null }, host());
+  try {
+    assert.equal(session.model, "test-b");
+    assert.equal(session.defaultModel, "test-b");
+  } finally {
+    await session.close();
   }
 });
 test("Claude selects a supported model before sending the resumed user turn", async () => {
@@ -310,7 +323,11 @@ test("Claude SDK uses installed binary, native resume, image blocks, permissions
     ({ prompt, options: config }) => {
       assert.equal(config.pathToClaudeCodeExecutable, process.execPath);
       assert.equal(config.resume, "previous");
-      assert.equal(config.permissionMode, "default");
+      assert.equal(config.cwd, options.cwd);
+      assert.deepEqual(config.settingSources, ["user", "project", "local"]);
+      assert.deepEqual(config.systemPrompt, { type: "preset", preset: "claude_code" });
+      for (const key of ["permissionMode", "allowDangerouslySkipPermissions", "spawnClaudeCodeProcess", "strictMcpConfig", "mcpServers", "additionalDirectories"])
+        assert.equal(Object.hasOwn(config, key), false, `${key} must remain native`);
       const result = (async function* () {
         for await (const user of prompt)
           assert.equal(user.message.content[1].source.type, "base64");
@@ -430,6 +447,7 @@ test(
   { timeout: 10000 },
   async () => {
     const dir = mkdtempSync(join(tmpdir(), "pitwall-runner-"));
+    const registered = registerProject(dir, projectState);
     const config = join(dir, "agents.json"),
       summaryPath = join(dir, "summary.txt");
     writeFileSync(
@@ -464,8 +482,8 @@ test(
     child.stdin.end(
       JSON.stringify({
         provider: "fixture",
-        cwd: dir,
-        writableRoots: [],
+        projectId: registered.id,
+        cwd: registered.path,
         stateDir: dir,
         team: "test",
         board: "General",

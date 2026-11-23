@@ -31,8 +31,6 @@ export interface AgentHost {
 export interface SessionOptions {
   cwd: string;
   resumeId?: string;
-  writableRoots: string[];
-  config?: Record<string, unknown>;
   model?: string | null;
   defaultModel?: string | null;
   discover?: boolean;

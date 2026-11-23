@@ -2,19 +2,22 @@
 import { readFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { resolveProject } from "./projects.mjs";
 import { openAgent } from "./providers/index.mjs";
 
 const abort = new AbortController();
 const timer = setTimeout(() => abort.abort(), 18000);
 process.once("SIGTERM", () => abort.abort());
 process.once("SIGINT", () => abort.abort());
-const cwd = mkdtempSync(join(tmpdir(), "pitwall-models-"));
-let session;
+let session, scratch;
 try {
   const request = JSON.parse(readFileSync(0, "utf8"));
+  const cwd = request.project
+    ? resolveProject(request.project).path
+    : (scratch = mkdtempSync(join(tmpdir(), "pitwall-models-")));
   session = await openAgent(
     request.provider,
-    { cwd, writableRoots: [], discover: true },
+    { cwd, discover: true },
     {
       signal: abort.signal,
       emit() {},
@@ -49,5 +52,5 @@ try {
 } finally {
   clearTimeout(timer);
   await session?.close();
-  rmSync(cwd, { recursive: true, force: true });
+  if (scratch) rmSync(scratch, { recursive: true, force: true });
 }

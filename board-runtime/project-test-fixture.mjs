@@ -1,0 +1,13 @@
+import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { after } from "node:test";
+import { registerProject, PROJECT_LABEL } from "./projects.mjs";
+export const root = mkdtempSync(join(tmpdir(), "pitwall-project-tests-"));
+export const state = join(root, "state");
+const path = join(root, "project");
+mkdirSync(path);
+process.env.SPROUT_STATE_DIR = state;
+export const project = registerProject(path, state);
+export const labels = { [PROJECT_LABEL]: project.id };
+after(() => rmSync(root, { recursive: true, force: true }));

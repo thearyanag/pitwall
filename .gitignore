@@ -37,3 +37,5 @@ __pycache__/
 /runtimes/
 /VERSION
 /BUILD-INFO.json
+
+/worker/projects/

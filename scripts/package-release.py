@@ -175,6 +175,7 @@ def main():
             "board-runtime/agent-runner.mjs",
             "board-runtime/discover-models.mjs",
             "worker/handoff.py",
+            "board-runtime/open-project.mjs",
         ):
             if not (bundle / required).is_file():
                 raise RuntimeError(f"Release is missing {required}")

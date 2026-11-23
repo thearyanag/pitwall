@@ -101,7 +101,7 @@ ACP uses the advertised model config option, with legacy `session/set_model` for
 agents that expose only that interface. Model changes retain the native session.
 Reference images are reattached when the model changes. Unsupported choices or
 images fail visibly instead of silently switching to another model or dropping
-attachments. A rejected preflight preserves the preceding verified session.
+attachments. A rejected preflight preserves the preceding completed session.
 
 **Agent default** resets the selection: Codex/Claude use their native default;
 ACP restores the default captured for that conversation's agent session (or its
@@ -143,7 +143,7 @@ those vendor extensions are kept out of the generic ACP behavior.
 
 One Board conversation can have multiple native agent sessions. Selecting a new
 agent starts its own session with attributed Board history and the reference
-images. Returning to an agent resumes its verified session and supplies messages
+images. Returning to an agent resumes its completed session and supplies messages
 it has not seen, including intervening comments and other agents' results.
 Reference images are sent again when history is handed off, including images
 introduced by another agent. Ordinary same-agent continuations send only new
@@ -157,27 +157,52 @@ supplied separately for a fresh session. The current request is never shortened.
 The reference archive is available to the agent if it needs omitted messages.
 This budget is not a guarantee that every native model context has room.
 
-The local session ledger advances only after the agent succeeds, verification
-passes, and its final Board result is posted. Old sessions that predate coverage
+The local session ledger advances only after the agent succeeds and its final
+Board result is posted. Old sessions that predate coverage
 tracking get a one-time fresh context bootstrap rather than a guessed history
 position. Edits to prior Board messages are identified by content fingerprints.
 
 One worker processes one job at a time. Processes close at the end of a job;
-verified session IDs let later jobs resume where supported. This is persistent
+completed session IDs let later jobs resume where supported. This is persistent
 conversation state, not an always-running agent process. Resume errors are visible;
 only a provider that advertises no resume gets a fresh session with Board context.
 
-The current worker still edits Pitwall's own Rust source/README in a source
-snapshot and validates changes before applying them. Selecting arbitrary projects,
-parallel agents, importing an existing terminal chat, free-form
-agent questions, and steering an in-flight turn are separate features.
+Each conversation is pinned to an explicitly opened local project. The worker
+revalidates its canonical path and directory identity before starting, then uses
+that directory as cwd for every provider. Project ID is part of the session key.
+There is no fallback to Pitwall's codebase and no source-copy/publish step. Edits
+happen directly, including edits made before a failure. Project checks are the
+agent's responsibility; Pitwall does not infer a build system or certify results.
 
-Codex retains workspace-write sandboxing. Other runtimes retain their own
-permission enforcement; Pitwall does not pretend that a source copy is an OS
-sandbox. It never enables an always-approve or bypass mode. ACP does not advertise
-client-provided filesystem or terminal tools, because these adapters use the
-agent's own tool implementations. An agent requiring those client capabilities
-needs an additional integration before it can run here.
+Pitwall delegates execution permissions to each native agent. It passes the
+selected project as the process and session working directory, without adding
+an outer sandbox, setting bypass modes, or silently recording project trust.
+The selected folder identifies the work target; it is not a provider-independent
+filesystem or network boundary. Settings, sandbox support and prompt frequency
+can differ by agent.
+
+- **Codex:** app-server resolves native configuration for `cwd`. Pitwall does not
+  override sandbox/approval/network settings or disable configured MCP servers.
+- **Claude Code:** the SDK uses the `claude_code` prompt preset and loads `user`,
+  `project` and `local` settings, including project instructions. Native settings
+  select the permission mode; calls still needing approval reach `canUseTool`.
+  This is the SDK integration, not an emulation of the interactive CLI trust UI.
+- **Grok / Antigravity:** the native process starts in the project and ACP
+  `session/new` / `session/load` receive the same `cwd`. The agent handles its
+  own project configuration and permission decisions. Pitwall supplies no
+  additional MCP servers or filesystem/terminal tools over ACP.
+
+Native approval requests are shown locally with Allow once / denial choices.
+They do not imply every tool call prompts. Unsupported interactions fail closed.
+Project settings can include hooks, tools and MCP servers; native configuration
+controls those too. Pitwall does not promise identical isolation across agents.
+
+Sessions created under the previous execution configuration get a fresh native
+session once, with Board history and images carried forward. This prevents old
+external-sandbox overrides from being resumed after the migration.
+
+Parallel agents, importing an existing terminal chat, free-form native agent
+questions and steering an in-flight turn remain separate features.
 
 Provider documentation:
 [Codex app-server](https://learn.chatgpt.com/docs/app-server),

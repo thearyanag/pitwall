@@ -18,6 +18,13 @@ fn populated(tag: &str) -> (App, PathBuf) {
     let dir = std::env::temp_dir().join(format!("sprout-ui-{tag}-{}", std::process::id()));
     app.config.adapter = dir.join("board-runtime/adapter.mjs");
     app.config.demo = false;
+    let project = crate::board::Project {
+        id: "test-project".into(),
+        name: "Test".into(),
+        path: dir.join("project"),
+    };
+    app.projects = vec![project.clone()];
+    app.current_project = Some(project);
     app.loaded = true;
     app.channels = vec![Channel {
         path: "general".into(),
@@ -29,7 +36,7 @@ fn populated(tag: &str) -> (App, PathBuf) {
         lease_until: None,
         author: "Test".into(),
         replies: 0,
-        labels: vec![],
+        labels: vec!["pitwall.project=test-project".into()],
     }];
     app.ensure_composer();
     (app, dir)
@@ -45,6 +52,74 @@ fn click(app: &mut App, action: Action) {
 }
 
 #[test]
+fn project_is_required_for_work_but_not_comments_and_new_project_drafts_are_separate() {
+    let (mut app, dir) = populated("project-scope");
+    app.items[0].labels.clear();
+    app.composer = None;
+    app.ensure_composer();
+    app.composer
+        .as_mut()
+        .unwrap()
+        .insert("Do not run without a project");
+    app.submit_draft();
+    assert!(app.pending.is_none());
+    assert!(app
+        .composer
+        .as_ref()
+        .unwrap()
+        .error
+        .as_ref()
+        .unwrap()
+        .contains("project"));
+    app.action(Action::Mode(false));
+    app.submit_draft();
+    assert!(matches!(
+        &app.pending,
+        Some(Request::Reply {
+            run_worker: false,
+            project: None,
+            ..
+        })
+    ));
+    drop(app);
+    let _ = std::fs::remove_dir_all(&dir);
+
+    let (mut app, dir) = populated("project-drafts");
+    app.open_composer();
+    app.composer.as_mut().unwrap().insert("Project one draft");
+    app.save_draft();
+    let choose = |app: &mut App, id: &str, name: &str| {
+        app.apply(Response {
+            generation: app.generation,
+            request: Request::OpenProject {
+                path: PathBuf::from("unused"),
+            },
+            data: Ok(json!({"id":id,"name":name,"path":dir.join(name)})),
+        });
+    };
+    choose(&mut app, "second-project", "Second");
+    assert!(app.composer.as_ref().unwrap().draft.text.is_empty());
+    assert_eq!(
+        app.composer.as_ref().unwrap().draft.project.as_deref(),
+        Some("second-project")
+    );
+    app.composer.as_mut().unwrap().insert("Project two draft");
+    app.save_draft();
+    choose(&mut app, "test-project", "First");
+    assert_eq!(
+        app.composer.as_ref().unwrap().draft.text,
+        "Project one draft"
+    );
+    app.open_reply();
+    assert_eq!(
+        app.composer.as_ref().unwrap().draft.project.as_deref(),
+        Some("test-project")
+    );
+    drop(app);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
 fn model_picker_applies_saves_and_pins_selection_without_changing_the_agent() {
     let (mut app, dir) = populated("model-picker");
     let mut terminal = Terminal::new(TestBackend::new(120, 36)).unwrap();
@@ -53,7 +128,7 @@ fn model_picker_applies_saves_and_pins_selection_without_changing_the_agent() {
     assert!(app.model_picker.as_ref().unwrap().loading);
     app.handle_key(KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE));
     assert!(!app.new_task);
-    app.apply(Response{generation:app.generation, request:Request::Models{provider:"codex".into()}, data:Ok(json!({"provider":"codex","models":[{"id":"model-a","label":"Model A"},{"id":"model-b","label":"Model B"}]}))});
+    app.apply(Response{generation:app.generation, request:Request::Models{provider:"codex".into(),project:None}, data:Ok(json!({"provider":"codex","models":[{"id":"model-a","label":"Model A"},{"id":"model-b","label":"Model B"}]}))});
     terminal.draw(|f| draw_ui(f, &mut app)).unwrap();
     click(&mut app, Action::ChooseModel(2));
     assert_eq!(
@@ -110,7 +185,10 @@ fn agent_picker_switches_replies_and_preserves_saved_choices() {
         app.composer.as_ref().unwrap().draft.provider,
         "custom-agent"
     );
-    app.items[0].labels = vec!["pitwall.agent=codex".into()];
+    app.items[0].labels = vec![
+        "pitwall.agent=codex".into(),
+        "pitwall.project=test-project".into(),
+    ];
     app.open_reply();
     terminal.draw(|f| draw_ui(f, &mut app)).unwrap();
     click(&mut app, Action::NextAgent);

@@ -6,6 +6,7 @@ export function launch(instance, args, cwd) {
     throw new Error(
       `${instance.label} is not installed. Install it and run ${instance.login || "its native login"}.`,
     );
+  // The installed agent owns configuration, trust and execution permissions.
   const child = spawn(instance.path, [...instance.args, ...args], {
     cwd,
     env: { ...process.env, ...instance.env },

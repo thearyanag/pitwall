@@ -28,6 +28,7 @@ pub(crate) enum Action {
     PickerUp,
     PickerClose,
     NewTask,
+    Project,
     Refresh,
     View,
     More,
@@ -57,6 +58,8 @@ pub(crate) struct App {
     pub(crate) config: Config,
     pub(crate) providers: Vec<crate::board::AgentInfo>,
     pub(crate) model_picker: Option<ModelPicker>,
+    pub(crate) projects: Vec<crate::board::Project>,
+    pub(crate) current_project: Option<crate::board::Project>,
     pub(crate) approval: Option<crate::approvals::Approval>,
     pub(crate) approval_scroll: u16,
     pub(crate) worker: Worker,
@@ -107,6 +110,8 @@ impl App {
             config,
             providers: vec![],
             model_picker: None,
+            projects: vec![],
+            current_project: None,
             approval: None,
             approval_scroll: 0,
             worker,
@@ -309,7 +314,7 @@ impl App {
         let data = match response.data {
             Ok(data) => data,
             Err(error) => {
-                if let Request::Models { provider } = &response.request {
+                if let Request::Models { provider, .. } = &response.request {
                     if let Some(picker) = self
                         .model_picker
                         .as_mut()
@@ -335,7 +340,19 @@ impl App {
         };
         let result: Result<(), String> = (|| {
             match response.request {
-                Request::Models { provider } => {
+                Request::OpenProject { .. } => {
+                    let project: crate::board::Project =
+                        serde_json::from_value(data).map_err(|e| e.to_string())?;
+                    self.save_draft();
+                    self.projects.retain(|p| p.id != project.id);
+                    self.projects.push(project.clone());
+                    self.current_project = Some(project);
+                    self.composer = None;
+                    self.new_task = true;
+                    self.focus = Focus::Composer;
+                }
+
+                Request::Models { provider, .. } => {
                     let catalog: crate::board::ModelCatalog =
                         serde_json::from_value(data).map_err(|e| format!("Model response: {e}"))?;
                     if catalog.provider != provider {
@@ -421,6 +438,7 @@ impl App {
                     let previous = self.channel_path();
                     self.identity = data.identity;
                     self.providers = data.providers;
+                    self.projects = data.projects;
                     self.channels = data.channels;
                     self.loaded = true;
                     self.channel = previous
@@ -586,11 +604,18 @@ impl App {
             self.new_task = true;
         }
         let thread = if self.new_task { None } else { self.item_id() };
-        if self
-            .composer
-            .as_ref()
-            .is_some_and(|e| e.draft.channel == channel && e.draft.thread == thread)
-        {
+        let project = if self.new_task {
+            self.current_project.as_ref().map(|p| p.id.clone())
+        } else {
+            self.items.get(self.item).and_then(|item| {
+                item.labels
+                    .iter()
+                    .find_map(|l| l.strip_prefix("pitwall.project=").map(str::to_owned))
+            })
+        };
+        if self.composer.as_ref().is_some_and(|e| {
+            e.draft.channel == channel && e.draft.thread == thread && e.draft.project == project
+        }) {
             return;
         }
         if let Some(editor) = self.composer.as_ref() {
@@ -607,7 +632,7 @@ impl App {
                 .map(|i| i.title.clone())
                 .unwrap_or_default()
         };
-        match composer::Composer::load_for(&self.config, channel, thread, title) {
+        match composer::Composer::load_for_project(&self.config, channel, thread, title, project) {
             Ok(mut editor) => {
                 if editor.draft.thread.is_some() && !editor.restored {
                     editor.draft.provider = self
@@ -672,7 +697,15 @@ impl App {
     }
     fn picked_file(&mut self, path: Option<PathBuf>) {
         if let Some(path) = path {
+            let project = self
+                .file_picker
+                .as_ref()
+                .is_some_and(|p| p.directories_only);
             self.file_picker = None;
+            if project {
+                self.request(Request::OpenProject { path });
+                return;
+            }
             self.paste_content(&path.to_string_lossy());
             self.save_draft();
             self.focus = Focus::Composer;
@@ -700,6 +733,18 @@ impl App {
             }
             Action::PickerClose => self.file_picker = None,
             Action::NewTask => self.open_composer(),
+            Action::Project => {
+                let start = self
+                    .current_project
+                    .as_ref()
+                    .map(|p| p.path.clone())
+                    .unwrap_or_else(|| {
+                        env::var_os("HOME")
+                            .map(PathBuf::from)
+                            .unwrap_or_else(|| PathBuf::from("/"))
+                    });
+                self.file_picker = Some(file_picker::FilePicker::folder(start));
+            }
             Action::Refresh => {
                 if self.feed_state == FeedState::Failed {
                     self.start_feed();
@@ -741,6 +786,7 @@ impl App {
                     return;
                 }
                 let provider = editor.draft.provider.clone();
+                let project = editor.draft.project.clone();
                 self.model_picker = Some(ModelPicker {
                     provider: provider.clone(),
                     models: vec![],
@@ -749,7 +795,7 @@ impl App {
                     loading: true,
                     error: None,
                 });
-                self.request(Request::Models { provider });
+                self.request(Request::Models { provider, project });
             }
             Action::ChooseModel(index) => {
                 let Some(picker) = &self.model_picker else {
@@ -1059,6 +1105,17 @@ impl App {
             editor.error = Some("Install and sign in to the selected agent, then Refresh.".into());
             return;
         }
+        if (editor.draft.thread.is_none() || editor.draft.send_to_agent)
+            && (editor.draft.project.is_none()
+                || !self
+                    .projects
+                    .iter()
+                    .any(|p| Some(&p.id) == editor.draft.project.as_ref()))
+        {
+            editor.error =
+                Some("Open a project folder and start a new task before running an agent.".into());
+            return;
+        }
         let was_attempted = editor.draft.locked;
         editor.draft.locked = true;
         if let Err(error) = editor.save(&self.config) {
@@ -1070,6 +1127,7 @@ impl App {
         editor.error = None;
         let request = if let Some(thread) = &editor.draft.thread {
             Request::Reply {
+                project: editor.draft.project.clone(),
                 provider: editor.draft.provider.clone(),
                 model: editor.draft.model.clone(),
                 run_worker: editor.draft.send_to_agent,
@@ -1080,6 +1138,7 @@ impl App {
             }
         } else {
             Request::Create {
+                project: editor.draft.project.clone(),
                 provider: editor.draft.provider.clone(),
                 model: editor.draft.model.clone(),
                 channel: editor.draft.channel.clone(),
@@ -1127,6 +1186,10 @@ impl App {
                 KeyCode::Char('r') if !picker.loading => self.action(Action::Models),
                 _ => {}
             }
+            return false;
+        }
+        if key.code == KeyCode::Char('l') && key.modifiers.contains(KeyModifiers::CONTROL) {
+            self.action(Action::Project);
             return false;
         }
         if key.code == KeyCode::Char('o') && key.modifiers.contains(KeyModifiers::CONTROL) {

@@ -3,7 +3,7 @@ set -eu
 cd -- "$(dirname -- "$0")/.."
 if [ "$#" -ne 1 ]; then
   echo 'Usage: Launch Codex Worker.command TASK_ID'
-  echo 'Claims one Pitwall task, runs the selected agent, verifies changes, then stops.'
+  echo 'Claims one Pitwall task, runs the selected agent, works in the selected project, then stops.'
   exit 2
 fi
 . ./runtime.sh

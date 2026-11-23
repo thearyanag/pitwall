@@ -1,9 +1,13 @@
+import {
+  project as testProject,
+  labels as projectLabels,
+} from "./project-test-fixture.mjs";
 import { scanQueue } from "./queue.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { board } from "@vercel/board";
 import { local } from "@vercel/board/backend-local";
-import { execute, summary, clean } from "./adapter.mjs";
+import { execute as executeRaw, summary, clean } from "./adapter.mjs";
 
 test("actual Board SDK: channels, tasks, replies, state changes, pagination and empty state", async () => {
   const backend = local({ memory: true });
@@ -221,3 +225,16 @@ test("image upload, uncertain submit retry, and authenticated download preserve 
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+function execute(team, req, imageRoot) {
+  return executeRaw(
+    team,
+    {
+      ...(req.op === "create" && !("project" in req)
+        ? { project: testProject.id }
+        : {}),
+      ...req,
+    },
+    imageRoot,
+  );
+}
